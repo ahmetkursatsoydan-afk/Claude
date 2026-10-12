@@ -4,7 +4,7 @@ import { DEFAULT_PHANTOM_CONFIG, type PhantomConfig } from '../phantom/types';
 import { PROTOCOLS, type Breathing, type ScanParams } from '../sim/scan';
 
 export type ViewMode = 'room' | 'viewer' | 'physics';
-export type ConsoleTab = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'recon';
+export type ConsoleTab = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'recon' | 'lab';
 export type Step = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'review';
 
 export interface TopoMeta {
@@ -68,6 +68,16 @@ export interface ViewportState {
   zoom: number;
   panX: number;
   panY: number;
+  /** bu pencerede gösterilen seri (yoksa etkin seri) – karşılaştırma için */
+  seriesId?: string | null;
+}
+
+/** Rehberli deney çalıştırma durumu */
+export interface ExperimentRuntime {
+  id: string | null;
+  status: 'idle' | 'running' | 'done' | 'error';
+  step: string;
+  series: string[];
 }
 
 export interface LogEntry {
@@ -99,7 +109,14 @@ export interface AppState {
     slab: number;
     slabMode: 'avg' | 'mip' | 'minip';
     showOverlay: boolean;
+    /** 1×2 karşılaştırmada z/pencere/yakınlaştırma/ROI eşlemesi */
+    sync: boolean;
+    /** ölçüm/ROI değişiklik sayacı (tüm pencereleri yeniden çizer) */
+    annRev: number;
+    /** karşılaştırma görünümünde gösterilen deney notu */
+    note: { title: string; points: string[] } | null;
   };
+  exp: ExperimentRuntime;
   physicsSliceZ: number | null;
   log: LogEntry[];
   /** makine durumunun arayüz kopyası */
@@ -143,7 +160,11 @@ export const useApp = create<AppState>()((set, get) => ({
     slab: 0,
     slabMode: 'avg',
     showOverlay: true,
+    sync: true,
+    annRev: 0,
+    note: null,
   },
+  exp: { id: null, status: 'idle', step: '', series: [] },
   physicsSliceZ: null,
   log: [{ t: Date.now(), text: 'Sistem hazır. Eğitim amaçlı sentetik BT simülatörü – gerçek hasta verisi kullanılmaz.', level: 'info' }],
   hw: { tableH: 0.52, tableT: -1170, rotor: 0, beam: 'off', lasers: true, cover: 'opaque', interlock: '', patientT: 0 },

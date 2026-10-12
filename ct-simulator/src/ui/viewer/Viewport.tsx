@@ -9,6 +9,7 @@ import { seriesStore, topoStore, type SeriesData } from '../../app/data';
 import { createRenderer, type AnyRenderer } from '../../viewer/SliceRenderer';
 import { axialImage, reformat, type ImageOut } from '../../viewer/mpr';
 import { KERNELS } from '../../physics/kernels';
+import { viewportSeriesId } from '../../viewer/compare';
 
 interface Ann {
   kind: 'line' | 'roi';
@@ -34,8 +35,9 @@ export function Viewport({ idx }: { idx: number }) {
   const rend = useRef<AnyRenderer | null>(null);
   const viewer = useApp((s) => s.viewer);
   const vp = viewer.vps[idx];
-  const activeId = useApp((s) => s.activeSeries);
-  const meta = useApp((s) => s.series.find((x) => x.id === s.activeSeries));
+  const activeId = useApp((s) => viewportSeriesId(s, idx));
+  const meta = useApp((s) => s.series.find((x) => x.id === viewportSeriesId(s, idx)));
+  const compare = viewer.layout === '1x2';
   const setViewport = useApp((s) => s.setViewport);
   const setViewer = useApp((s) => s.setViewer);
   const topoVer = useApp((s) => s.topo.version);
@@ -137,7 +139,7 @@ export function Viewport({ idx }: { idx: number }) {
     if (drag.current?.ann) anns.push(drag.current.ann);
     for (const a of anns) drawAnn(g, a, r, vp, image, dpr);
     void ver;
-  }, [image, vp, size, viewer.layout, viewer.vps, ver, sd, dpr, topoVer, meta?.version]);
+  }, [image, vp, size, viewer.layout, viewer.vps, ver, sd, dpr, topoVer, meta?.version, viewer.annRev]);
 
   const n = sd ? nSlicesFor(sd, vp.orientation) : 0;
 
@@ -237,15 +239,33 @@ export function Viewport({ idx }: { idx: number }) {
           const d = drag.current;
           if (d?.ann && key) {
             const len = Math.hypot(d.ann.b[0] - d.ann.a[0], d.ann.b[1] - d.ann.a[1]);
-            if (len > 1) annStore.set(key, [...(annStore.get(key) ?? []), d.ann]);
+            if (len > 1) {
+              annStore.set(key, [...(annStore.get(key) ?? []), d.ann]);
+              // senkron karşılaştırma: aynı ölçüm/ROI diğer pencereye de (aynı mm konumu)
+              if (compare && viewer.sync) {
+                const st = useApp.getState();
+                st.viewer.vps.forEach((v, j) => {
+                  if (j === idx || j > 1 || v.orientation !== vp.orientation) return;
+                  const osd = seriesStore.get(viewportSeriesId(st, j) ?? '');
+                  if (!osd) return;
+                  const k2 = `${osd.id}|${v.orientation}|${v.index}`;
+                  if (k2 !== key) annStore.set(k2, [...(annStore.get(k2) ?? []), { ...d.ann!, a: [...d.ann!.a], b: [...d.ann!.b] }]);
+                });
+              }
+            }
             annVer++;
+            setViewer({ annRev: viewer.annRev + 1 });
           }
           drag.current = null;
           setVer((v) => v + 1);
         }}
         onPointerLeave={() => setCursor(null)}
-        onDoubleClick={() => setViewer({ layout: viewer.layout === '1x1' ? 'mpr' : '1x1', active: idx, vps: viewer.layout === '1x1' ? viewer.vps : [viewer.vps[idx], ...viewer.vps.filter((_, i) => i !== idx)] })}
+        onDoubleClick={() => {
+          if (compare) return;
+          setViewer({ layout: viewer.layout === '1x1' ? 'mpr' : '1x1', active: idx, vps: viewer.layout === '1x1' ? viewer.vps : [viewer.vps[idx], ...viewer.vps.filter((_, i) => i !== idx)] });
+        }}
       />
+      {compare && meta && <div className={'cmp-tag ' + (idx === 0 ? 'a' : 'b')}>{`${idx === 0 ? 'A' : 'B'} · ${meta.name}`}</div>}
       {viewer.showOverlay && sd && meta && vp.orientation !== 'scout' && (
         <>
           <div className="ov tl">

@@ -9,6 +9,8 @@ import { TopogramTab } from './console/TopogramTab';
 import { PlanTab } from './console/PlanTab';
 import { ScanTab } from './console/ScanTab';
 import { ReconTab } from './console/ReconTab';
+import { ExperimentsTab } from './console/ExperimentsTab';
+import { EXPERIMENTS, cancelExperiment } from '../app/experiments';
 import { isoYp } from '../scene/dims';
 
 const TABS: { id: ConsoleTab; l: string }[] = [
@@ -18,6 +20,7 @@ const TABS: { id: ConsoleTab; l: string }[] = [
   { id: 'plan', l: 'Plan' },
   { id: 'scan', l: 'Tarama' },
   { id: 'recon', l: 'Rekon' },
+  { id: 'lab', l: 'Deneyler' },
 ];
 
 const CAMS: { id: CameraPreset; l: string }[] = [
@@ -41,6 +44,7 @@ export function RoomView({ active }: { active: boolean }) {
   const hw = useApp((s) => s.hw);
   const scan = useApp((s) => s.scan);
   const params = useApp((s) => s.params);
+  const exp = useApp((s) => s.exp);
   const [showBeam, setShowBeam] = useState(true);
   const [mobile3d, setMobile3d] = useState(false);
 
@@ -110,6 +114,18 @@ export function RoomView({ active }: { active: boolean }) {
             </div>
           )}
           {hw.interlock && <div className="card warn">{hw.interlock}</div>}
+          {exp.status === 'running' && (
+            <div className="card exp-hud">
+              <div style={{ fontWeight: 600 }}>🧪 {EXPERIMENTS.find((e) => e.id === exp.id)?.title}</div>
+              <div style={{ opacity: 0.85 }}>{exp.step}</div>
+              <button className="btn sm" style={{ marginTop: 4 }} onClick={() => set({ tab: 'lab' })}>
+                Deney paneli
+              </button>{' '}
+              <button className="btn sm danger" style={{ marginTop: 4 }} onClick={cancelExperiment}>
+                İptal
+              </button>
+            </div>
+          )}
         </div>
         <div className="cam-bar">
           {CAMS.map((c) => (
@@ -154,7 +170,7 @@ export function RoomView({ active }: { active: boolean }) {
         <div className="tabs">
           {TABS.map((t, i) => (
             <button key={t.id} className={'tab' + (tab === t.id ? ' active' : '')} onClick={() => set({ tab: t.id })}>
-              <span className="n">{i + 1}</span>
+              <span className="n">{t.id === 'lab' ? '🧪' : i + 1}</span>
               {t.l}
             </button>
           ))}
@@ -166,6 +182,7 @@ export function RoomView({ active }: { active: boolean }) {
           {tab === 'plan' && <PlanTab />}
           {tab === 'scan' && <ScanTab />}
           {tab === 'recon' && <ReconTab />}
+          {tab === 'lab' && <ExperimentsTab />}
         </div>
       </div>
     </div>

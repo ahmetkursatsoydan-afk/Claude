@@ -26,13 +26,14 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
 ## İş akışı (uygulama içinde)
 
 1. **Hasta** – protokol seçimi (beyin, toraks, düşük doz akciğer, abdomen-pelvis, TAP, BT anjiyo, kalça/metal),
-   vücut yapısı (zayıf/orta/obez), kol pozisyonu, metal implant. “Hastayı masaya yatır” animasyonu.
+   vücut yapısı (zayıf/orta/obez), kol pozisyonu, metal implant, solunum (nefes tutuyor / yüzeysel / derin).
+   “Hastayı masaya yatır” animasyonu.
 2. **Konum** – masa yüksekliği/pozisyonu (basılı tutulan tuşlar veya kaydırıcılar), otomatik izomerkez,
    lazer hizalama, dikey merkezleme hatası göstergesi, gantriye giriş için çarpışma kilidi.
 3. **Topogram** – AP veya lateral, kV/mA, uzunluk; masa hareketi ve satır satır oluşan scout görüntüsü.
 4. **Plan** – topogram üzerinde sürüklenebilir başlangıç/bitiş çizgileri ve rekon FOV kutusu, ATCM mA eğrisi;
    kVp 70–150, mAs 10–800, rotasyon 0.25–1 s, pitch 0.5–1.5, kolimasyon 64/128/256×0.5 mm, kesit 0.5–10 mm,
-   aralık, kernel (yumuşak doku/akciğer/kemik), FBP veya hibrit iteratif (seviye 1–5), MAR, DFOV, matris
+   aralık, kernel (yumuşak doku/akciğer/kemik), FBP veya hibrit iteratif (seviye 1–5), MAR, saçılma düzeltmesi, DFOV, matris
    (256–1024), kontrast fazı ve gecikmesi, yön; CTDIvol/DLP/etkin doz/SSDE ve uyarılar.
 5. **Tarama** – rotor hızlanması, kontrast geri sayımı, nefes komutu, X-ışını uyarısı, masa ilerlemesi,
    canlı sinogram + dedektör profili + aşamalı geri izdüşüm, gerçek zamanlı kV/mA/z/DLP ve ilerleme.
@@ -40,9 +41,14 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
    görüntüleyici: W/L sürükleme ve ön ayarlar (beyin, inme, subdural, yumuşak doku, mediasten, karaciğer,
    akciğer, kemik, anjiyo, metal), pan/zoom, tekerlekle kesit kaydırma, sine, mesafe ölçümü, elips ROI
    (ortalama/SD/min/maks/alan), HU sondası, 2×2 MPR (aksiyel/koronal/sagittal + topogram referans çizgisi),
-   kalın dilim ortalama/MIP/MinIP.
+   kalın dilim ortalama/MIP/MinIP, **1×2 karşılaştırma** (iki seri yan yana; kesit konumu, W/L, yakınlaştırma
+   ve ROI/ölçümler senkron).
 7. **Fizik & Veri** – spektrum ve sertleşme, μ/ρ(E), kVp'ye göre beklenen HU, veri zinciri
    (fantom → sinogram → filtreli sinogram → görüntü), kernel MTF/NPS, ATCM ve Dw profili, kontrast eğrileri.
+8. **Deneyler** – 12 rehberli fizik deneyi (mAs–gürültü, kesit kalınlığı, kernel, kVp–iyot, ışın sertleşmesi,
+   metal/MAR, kol pozisyonu, pitch, solunum hareketi, saçılma, dikey merkezleme, SFOV kesilmesi). Her deney
+   tek bir parametreyi değiştirir; hasta hazırlığı, topogram, A/B taramaları (veya aynı ham veriden retrospektif
+   rekon) otomatik yürür ve görüntüleyicide neyin gözlemleneceğini anlatan notla senkron karşılaştırma açılır.
 
 ## Fiziksel model
 
@@ -56,6 +62,9 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
 | Polikromatik sinyal | Enerji-entegre eden dedektör: Tₑ = Σ E·N(E)·e^(−Σμ_c(E)L_c) / Σ E·N(E). Su/kemik ışınlarında 2B tablo, iyot/metalde doğrudan enerji toplamı. |
 | Gürültü | Bileşik Poisson: NEQ = (Σ E N e^{−μL})² / Σ E² N e^{−μL}; foton akısı ∝ mAs_eff × kalınlık × tüp çıkışı(kVp) × papyon; + elektronik gürültü. 32 cm su, 120 kVp, 100 eff.mAs, 5 mm, yumuşak kernel → σ ≈ 13 HU (kalibre). |
 | ATCM | z-modülasyonu: AP topogramdan su-eşdeğer çap Dw (AAPM 220) → mA(z) = mA_ref·e^{β(Dw−Dref)}; açısal modülasyon: mA(θ) ∝ √(zayıflatma). Jeneratör gücü sınırı (100 kW, 1000 mA). |
+| Saçılma | Birincil akı × (−ln T) kaynak terimi, geniş Gauss çekirdekle (σ≈55 mm) dedektöre yayılır; genlik toplam kolimasyonla artar (32 cm su merkezinde SPR ≈ 0.10 @ 32 mm, ≈ 0.26 @ 128 mm). Model tabanlı düzeltme tahmini %90 oranında çıkarır: önyargı kalkar, saçılma gürültüsü kalır. Kapalıyken HU düşmesi, kupa ve yoğun yapılar arasında koyu bantlar. |
+| Solunum hareketi | Diyafram, karaciğer/karın organları, akciğer tabanı ve kalp kraniyokaudal yönde sinüzoidal yer değiştirir (z'ye göre ağırlıklı). Bir kesitin verisi ≈0.62 rotasyon boyunca toplanır: fantom birkaç anahtar anda rasterleştirilir ve her görünümün izdüşümü zaman içinde harmanlanır → çift kontur, çizgiler; kesitler farklı fazlarda alındığından MPR'de basamaklanma. Nefes tutan hasta ~20 s sonra nefes almaya başlar. |
+| Kesilme (SFOV) | Fantom 700 mm ızgarada rasterleştirilir, dedektör 500 mm SFOV'u kapsar: dışarıda kalan vücut kısımları (obez hasta, yanda kollar) ölçülmez → kenar parlaması ve HU kayması. |
 | Ön işleme | −ln(I/I₀), su ışın sertleşmesi düzeltmesi (papyon kanalına göre sürekli kalibrasyon), foton açlığı için uyarlamalı 2B filtre. Kemik/iyot için düzeltilmemiş sertleşme kalır → kemikler arası koyu bantlar, kVp'ye bağlı HU. |
 | Rekonstrüksiyon | FBP: Kak–Slaney rampa × kernel penceresi (lp/cm cinsinden): yumuşak doku (Hann, ~8 lp/cm), akciğer (+%35 artış), kemik (+%95 artış, kenar aşması). Hibrit IR: izdüşüm alanı istatistiksel filtre + Huber-TV görüntü alanı düzenlileştirme + FBP harmanlama (seviye 1–5). MAR: metal izinin doğrusal enterpolasyonu. |
 | Kontrast | Gama-varyat + denge kompartmanları (aort, sağ kalp/PA, portal ven, IVC, karaciğer, dalak, pankreas, böbrek korteks/medulla, ekskresyon, mesane tabakalaşması). Her kesit, masanın o z'ye ulaştığı zamanda örneklenir. |
@@ -63,10 +72,12 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
 
 Gözlemlenebilen etkiler: gürültü–mAs/kalınlık/kVp/kernel/IR ilişkisi, uzaysal çözünürlük–kernel/odak noktası,
 kısmi hacim, ışın sertleşmesi (kafa tabanı, pelvis), foton açlığı (kollar yanda, metal), metal artefaktı ve MAR,
-yanlış dikey merkezleme, kVp'ye bağlı iyot/kemik kontrastı, kontrast fazı zamanlaması, sonlu görünüm örneklemesi.
+yanlış dikey merkezleme, kVp'ye bağlı iyot/kemik kontrastı, kontrast fazı zamanlaması, sonlu görünüm örneklemesi,
+saçılma (kolimasyona bağlı), solunum hareketi, SFOV kesilmesi.
 
 **Sınırlamalar / yaklaşımlar:** Koni ışını ve gerçek helikal ağırlıklandırma yerine kesit başına paralel ışın
-FBP kullanılır; saçılma, hareket, pencere (windmill) ve tüp ısınması modellenmez; doz değerleri tipik
+FBP kullanılır; saçılma ve solunum hareketi yaklaşık modellerdir, kalp atımı, pencere (windmill) ve tüp ısınması
+modellenmez; doz değerleri tipik
 literatür katsayılarına dayalı yaklaşık değerlerdir; anatomi stilize ve basitleştirilmiştir.
 
 ## Mimari
@@ -79,8 +90,9 @@ src/
   sim/       poly.ts (polikromatik + BHC), projector.ts (Joseph + geri izdüşüm), gpu.ts (WebGL2), fbp.ts, fft.ts,
              ir.ts, mar.ts, slice.ts (tek kesit uçtan uca), topogram.ts, scan.ts (plan/ATCM/doz), worker.ts, pool.ts
   scene/     Three.js: SceneController, room, gantry (rotor, tüp, dedektör, X-ışını yelpazesi), table, patient, lasers
-  app/       machine.ts (masa/rotor/ışın durum makinesi), controller.ts (iş akışı), data.ts (seri/topogram depoları)
-  viewer/    SliceRenderer.ts (WebGL2 R16I pencereleme, Canvas2D yedek), mpr.ts
+  app/       machine.ts (masa/rotor/ışın durum makinesi), controller.ts (iş akışı), data.ts (seri/topogram depoları),
+             experiments.ts (rehberli A/B deneyleri ve otomatik çalıştırıcı)
+  viewer/    SliceRenderer.ts (WebGL2 R16I pencereleme, Canvas2D yedek), mpr.ts, compare.ts (1×2 senkron karşılaştırma)
   ui/        React konsol sekmeleri, topogram planlayıcı, görüntüleyici, fizik paneli
 tests/       Vitest fizik ve rekonstrüksiyon testleri
 scripts/     Kalibrasyon ve görsel doğrulama betikleri (vite-node ile)
@@ -101,4 +113,7 @@ npx vite-node scripts/calib.ts standard     # su fantomu: HU doğruluğu, gürü
 npx vite-node scripts/phantomSlices.ts      # fantom kesitlerini PNG olarak (out/)
 npx vite-node scripts/topo.ts               # AP + lateral topogram
 HEAD=1 WW=80 WL=40 npx vite-node scripts/simSlices.ts 60,85   # tam simülasyonlu kesitler
+BREATH=25 ROT=1 npx vite-node scripts/simSlices.ts 520         # solunum hareketi
+COLL=128 SCORR=0 npx vite-node scripts/simSlices.ts 880        # saçılma (düzeltme kapalı)
+npx vite-node scripts/scatter.ts                               # saçılma kalibrasyonu (SPR, kupa)
 ```

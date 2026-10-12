@@ -8,7 +8,7 @@ import { seriesStore } from '../../app/data';
 export function ReconTab() {
   const { activeSeries, series, set } = useApp();
   const src = activeSeries ? seriesStore.get(activeSeries) : null;
-  const [o, setO] = useState({ thickness: 1, interval: 1, kernel: 'bone' as KernelId, recon: 'FBP' as 'FBP' | 'IR', irLevel: 3, mar: false, dfov: 360, matrix: 512 });
+  const [o, setO] = useState({ thickness: 1, interval: 1, kernel: 'bone' as KernelId, recon: 'FBP' as 'FBP' | 'IR', irLevel: 3, mar: false, scatterCorr: true, dfov: 360, matrix: 512 });
   const up = (p: Partial<typeof o>) => setO({ ...o, ...p });
   return (
     <>
@@ -41,6 +41,9 @@ export function ReconTab() {
             <Row label="MAR">
               <Toggle value={o.mar} onChange={(v) => up({ mar: v })} label={o.mar ? 'Açık' : 'Kapalı'} />
             </Row>
+            <Row label="Saçılma düzeltmesi" title="Ön işleme adımı: ham veriden saçılma tahmininin çıkarılması">
+              <Toggle value={o.scatterCorr} onChange={(v) => up({ scatterCorr: v })} label={o.scatterCorr ? 'Açık' : 'Kapalı'} />
+            </Row>
             <Row label="DFOV">
               <Slider value={o.dfov} min={100} max={500} step={5} unit="mm" onChange={(v) => up({ dfov: v })} />
             </Row>
@@ -51,7 +54,7 @@ export function ReconTab() {
               <button className="btn primary" onClick={() => retroRecon(o)}>
                 ⟳ Yeni seri oluştur
               </button>
-              <button className="btn" onClick={() => setO({ ...o, thickness: src.params.thickness, interval: src.params.interval, kernel: src.params.kernel, recon: src.params.recon, irLevel: src.params.irLevel, mar: src.params.mar, dfov: src.params.dfov, matrix: src.params.matrix })}>
+              <button className="btn" onClick={() => setO({ ...o, thickness: src.params.thickness, interval: src.params.interval, kernel: src.params.kernel, recon: src.params.recon, irLevel: src.params.irLevel, mar: src.params.mar, scatterCorr: src.params.scatterCorr ?? true, dfov: src.params.dfov, matrix: src.params.matrix })}>
                 Kaynaktan kopyala
               </button>
             </div>

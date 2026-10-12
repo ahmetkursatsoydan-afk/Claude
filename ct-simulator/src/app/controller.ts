@@ -17,6 +17,11 @@ const S = () => useApp.getState();
 let abortFlag = false;
 let seriesCounter = 1;
 let skipWait = false;
+let autoSkip = false;
+/** Rehberli deneylerde kontrast gecikmesini beklemeden atla (zamanlama planlanan değerlerle simüle edilir). */
+export function setAutoSkipWait(v: boolean) {
+  autoSkip = v;
+}
 
 export function log(text: string, level: 'info' | 'warn' | 'ok' = 'info') {
   S().addLog(text, level);
@@ -215,7 +220,7 @@ function createSeries(p: ScanParams, plan: ScanPlan, base: SliceRequest, seed: n
   const zs = Array.from({ length: n }, (_, i) => z0 + i * pp.interval);
   const sd: SeriesData = {
     id,
-    base: { ...base, thickness: pp.thickness, kernel: pp.kernel, recon: pp.recon, irLevel: pp.irLevel, mar: pp.mar, dfov: pp.dfov, matrix: pp.matrix, reconCx: pp.reconCx },
+    base: { ...base, thickness: pp.thickness, kernel: pp.kernel, recon: pp.recon, irLevel: pp.irLevel, mar: pp.mar, dfov: pp.dfov, matrix: pp.matrix, reconCx: pp.reconCx, scatterCorr: pp.scatterCorr },
     params: pp,
     plan,
     zs,
@@ -391,7 +396,7 @@ export async function startScan() {
     let t = 0;
     const speed = 1;
     while (t < p.delay && !abortFlag) {
-      if (skipWait) {
+      if (skipWait || autoSkip) {
         t = p.delay;
         break;
       }
