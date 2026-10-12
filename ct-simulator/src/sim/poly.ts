@@ -38,8 +38,12 @@ export interface PolyModel {
   nE: number;
   eCenters: number[];
   groups: PolyGroup[];
-  /** bin → grup */
+  /** bin → grup (en yakın) */
   groupOfBin: Uint16Array;
+  /** bin → komşu iki grup ve karışım oranı (halka artefaktını önlemek için sürekli papyon kalibrasyonu) */
+  groupA: Uint16Array;
+  groupB: Uint16Array;
+  groupF: Float32Array;
   /** referans (etkin) enerji ve suyun lineer katsayısı (1/cm) */
   eRef: number;
   muRef: number;
@@ -157,13 +161,18 @@ export function buildPolyModel(kVp: number, bowtie: BowtieType, nb: number, ds: 
   }
 
   const groupOfBin = new Uint16Array(nb);
+  const groupA = new Uint16Array(nb), groupB = new Uint16Array(nb), groupF = new Float32Array(nb);
   const cb = (nb - 1) / 2;
   for (let b = 0; b < nb; b++) {
     const s = Math.abs((b - cb) * ds);
-    groupOfBin[b] = Math.min(N_BOWTIE_GROUPS - 1, Math.round((s / S_MAX) * (N_BOWTIE_GROUPS - 1)));
+    const u = Math.min(N_BOWTIE_GROUPS - 1, (s / S_MAX) * (N_BOWTIE_GROUPS - 1));
+    groupOfBin[b] = Math.round(u);
+    groupA[b] = Math.floor(u);
+    groupB[b] = Math.min(N_BOWTIE_GROUPS - 1, Math.floor(u) + 1);
+    groupF[b] = u - Math.floor(u);
   }
 
-  return { kVp, bowtie, nE, eCenters, groups, groupOfBin, eRef, muRef, centerSpectrum: base };
+  return { kVp, bowtie, nE, eCenters, groups, groupOfBin, groupA, groupB, groupF, eRef, muRef, centerSpectrum: base };
 }
 
 /** Enerji-ağırlıklı geçirgenlik (L: g/cm² kanal yoğunluk-yol çarpımı). */
@@ -186,3 +195,35 @@ export function applyBhc(g: PolyGroup, p: number): number {
   const f = u - i;
   return g.bhc[i] * (1 - f) + g.bhc[i + 1] * f;
 }
+
+/**
+ * Bir ışın için enerji-ağırlıklı geçirgenlik ve göreli NEQ (su/kemik ışınlarında 2B tablo,
+ * iyot/metal içerenlerde doğrudan enerji toplamı). out[0]=Te, out[1]=NEQrel
+ */
+export function polyEval(g: PolyGroup, nE: number, lw: number, lb: number, li: number, lm: number, out: Float64Array): void {
+  if (li === 0 && lm === 0 && lw >= 0 && lb > LUT_B_MIN && lw < LUT_W_MAX && lb < LUT_B_MAX) {
+    const uw = lw * LW_SCALE, ub = (lb - LUT_B_MIN) * LB_SCALE;
+    const iw = uw | 0, ib = ub | 0;
+    const fw = uw - iw, fb = ub - ib;
+    const lut = g.lut;
+    const o00 = 2 * (ib * LUT_NW + iw), o01 = o00 + 2, o10 = o00 + 2 * LUT_NW, o11 = o10 + 2;
+    const pA = (lut[o00] * (1 - fw) + lut[o01] * fw) * (1 - fb) + (lut[o10] * (1 - fw) + lut[o11] * fw) * fb;
+    const pB = (lut[o00 + 1] * (1 - fw) + lut[o01 + 1] * fw) * (1 - fb) + (lut[o10 + 1] * (1 - fw) + lut[o11 + 1] * fw) * fb;
+    out[0] = Math.exp(-pA);
+    out[1] = Math.exp(-pB);
+    return;
+  }
+  const mu = g.mu, wE = g.wE, w2 = g.w2;
+  let s1 = 0, s2 = 0;
+  for (let e = 0; e < nE; e++) {
+    const x = lw * mu[e] + lb * mu[nE + e] + li * mu[2 * nE + e] + lm * mu[3 * nE + e];
+    const ex = Math.exp(-x);
+    s1 += wE[e] * ex;
+    s2 += w2[e] * ex;
+  }
+  out[0] = s1;
+  out[1] = s2 > 0 ? (s1 * s1) / s2 : 0;
+}
+
+const LW_SCALE = (LUT_NW - 1) / LUT_W_MAX;
+const LB_SCALE = (LUT_NB - 1) / (LUT_B_MAX - LUT_B_MIN);

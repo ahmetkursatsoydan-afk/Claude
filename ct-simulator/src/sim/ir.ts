@@ -86,22 +86,37 @@ export function irImageDomain(img: Float32Array, m: number, level: number, sigma
   return out;
 }
 
-/** Yüksek geçiren artığın MAD'ından gürültü (σ, HU) kestirimi — yumuşak doku aralığında. */
+/**
+ * Gürültü (σ, HU) kestirimi: yumuşak doku aralığındaki birçok 7×7 pencerenin yerel standart
+ * sapmalarının alt yüzdelik dilimi (homojen bölgeler). Korelasyonlu (kernel ile süzülmüş)
+ * gürültüde de doğru çalışır.
+ */
 export function estimateNoise(img: Float32Array, m: number): number {
-  const vals: number[] = [];
-  const step = Math.max(1, Math.floor(m / 128));
-  for (let j = 2; j < m - 2; j += step) {
-    for (let i = 2; i < m - 2; i += step) {
-      const k = j * m + i;
-      const c = img[k];
-      if (c < -150 || c > 200) continue;
-      const lap = c - 0.25 * (img[k - 1] + img[k + 1] + img[k - m] + img[k + m]);
-      vals.push(Math.abs(lap));
+  const sds: number[] = [];
+  const step = Math.max(4, Math.floor(m / 48));
+  const h = 3;
+  for (let j = h; j < m - h; j += step) {
+    for (let i = h; i < m - h; i += step) {
+      let s = 0, s2 = 0, n = 0, ok = true;
+      for (let dj = -h; dj <= h && ok; dj++) {
+        const r = (j + dj) * m;
+        for (let di = -h; di <= h; di++) {
+          const v = img[r + i + di];
+          if (v < -150 || v > 250) {
+            ok = false;
+            break;
+          }
+          s += v;
+          s2 += v * v;
+          n++;
+        }
+      }
+      if (!ok) continue;
+      const mean = s / n;
+      sds.push(Math.sqrt(Math.max(0, s2 / n - mean * mean)));
     }
   }
-  if (vals.length < 50) return 10;
-  vals.sort((a, b) => a - b);
-  const mad = vals[Math.floor(vals.length / 2)];
-  // Bağımsız gürültü için lap σ = σ·√(1+4/16)=1.118σ; MAD→σ: /0.6745
-  return mad / 0.6745 / 1.118;
+  if (sds.length < 8) return 10;
+  sds.sort((a, b) => a - b);
+  return sds[Math.floor(sds.length * 0.25)];
 }

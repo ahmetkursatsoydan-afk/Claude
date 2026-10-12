@@ -4,7 +4,7 @@
  * beyin sapı, serebellum, sisternalar, Willis poligonu, dural sinüsler), orbitalar, paranazal
  * sinüsler, yüz kemikleri, mandibula, dişler, dil, tükürük bezleri.
  */
-import { axisEllipsoid, ell, ellipsoid, props, seg, smoothPath, structure, sweep, sweepSampler, tube, type SweepKey, type TubePt } from '../primitives';
+import { axisEllipsoid, blobShape, ell, ellipsoid, props, seg, smoothPath, structure, sweep, sweepSampler, tube, type SweepKey, type TubePt } from '../primitives';
 import type { EllShape } from '../types';
 import type { HalfPlane, Paint, PhantomConfig, Structure } from '../types';
 import { HABITUS_FAT, interpTable, mulberry } from './common';
@@ -149,7 +149,6 @@ export function brain(cfg: PhantomConfig): Structure[] {
     out.push(ellipsoid(name, { c, r, rot: [0, 0, rz] }, pGray));
   }
   // beyaz cevher
-  out.push(ellipsoid('beyaz cevher', { c: [0, 18, 66], r: [50, 70, 46] }, pWhite));
   out.push(ellipsoid('temporal beyaz cevher', { c: [-44, 4, 112], r: [12, 26, 13], rot: [0, 0, -10] }, pWhite));
   out.push(ellipsoid('temporal beyaz cevher', { c: [44, 4, 112], r: [12, 26, 13], rot: [0, 0, 10] }, pWhite));
   out.push(ellipsoid('oksipital beyaz cevher', { c: [0, 66, 96], r: [42, 22, 14] }, pWhite));
@@ -168,6 +167,36 @@ export function brain(cfg: PhantomConfig): Structure[] {
     z0: 4 + rnd() * 30,
     z1: 70 + rnd() * 34,
   }));
+  // Beyaz cevher: korteksin (~4.5 mm) altında, sulkus derinliklerinde geri çekilen girus parmakları
+  out.push(
+    structure('beyaz cevher (giral)', 8, 97, (z, o) => {
+      const b = br.at(z);
+      if (!b) return;
+      const N = 360;
+      const radii = new Float32Array(N);
+      const taper = Math.min(1, (z - 8) / 14) * Math.min(1, (97 - z) / 10);
+      const ctx = 4.5 + (1 - taper) * 6;
+      for (let k = 0; k < N; k++) {
+        const ph = (k / N) * Math.PI * 2;
+        const rb = 1 / Math.sqrt((Math.cos(ph) / b.rx) ** 2 + (Math.sin(ph) / b.ry) ** 2);
+        radii[k] = Math.max(2, rb - ctx);
+      }
+      for (const sl of sul) {
+        if (z < sl.z0 || z > sl.z1) continue;
+        const th = sl.th0 + sl.amp * Math.sin(z * sl.fr * 6.28 + sl.ph);
+        let ang = Math.atan2(Math.sin(th) * b.ry, Math.cos(th) * b.rx);
+        if (ang < 0) ang += Math.PI * 2;
+        const kc = Math.round((ang / (Math.PI * 2)) * N);
+        const d = sl.depth * (0.75 + 0.25 * Math.sin(z * 0.11 + sl.ph));
+        for (let dk = -14; dk <= 14; dk++) {
+          const k = (kc + dk + N) % N;
+          const arc = ((dk * Math.PI * 2) / N) * (radii[k] + ctx);
+          radii[k] = Math.max(2, Math.min(radii[k], radii[k] + ctx - (d + 3.5) * Math.exp(-((arc / 2.6) ** 2))));
+        }
+      }
+      o.push({ shape: blobShape(b.cx, b.cy, radii), p: pWhite });
+    }),
+  );
   out.push(
     structure('sulkuslar', 4, 104, (z, o) => {
       const b = br.at(z);
@@ -318,8 +347,8 @@ export function face(cfg: PhantomConfig): Structure[] {
   // etmoid hava hücreleri
   out.push(ellipsoid('etmoid', { c: [0, -52, 122], r: [12, 26, 16] }, props('diploe', { tex: { kind: 'mottle', amp: 1, scale: 2.4, seed: 131, thr: -0.25 } })));
   // frontal sinüs
-  out.push(ellipsoid('frontal kemik kalınlaşması', { c: [0, -80, 86], r: [21, 11, 14] }, pDip));
-  out.push(ellipsoid('frontal sinüs', { c: [0, -81, 87], r: [15, 7, 10] }, pAir));
+  out.push(ellipsoid('frontal kemik kalınlaşması', { c: [0, -71, 86], r: [20, 9, 13] }, pDip));
+  out.push(ellipsoid('frontal sinüs', { c: [0, -71, 87], r: [14, 5.5, 9] }, pAir));
   // nazal kavite
   out.push(ellipsoid('nazal kavite', { c: [0, -56, 150], r: [14, 38, 23] }, pAir));
   out.push(structure('nazal septum', 126, 174, (_z, o) => o.push({ shape: seg(0, -92, 0, -22, 1.1), p: pCort })));

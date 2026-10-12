@@ -10,7 +10,7 @@
 import { KERNELS } from '../physics/kernels';
 import { makeConcFn } from '../physics/contrast';
 import { rasterizeSlab, type Grid, type PhantomModel } from '../phantom/raster';
-import { buildPolyModel, applyBhc, LUT_B_MAX, LUT_B_MIN, LUT_NB, LUT_NW, LUT_W_MAX, type PolyModel } from './poly';
+import { buildPolyModel, applyBhc, polyEval, type PolyModel } from './poly';
 import { projectJoseph, backproject, type ProjGeom, type ReconGrid } from './projector';
 import { filterSinogram } from './fbp';
 import { adaptiveSinoFilter, estimateNoise, irImageDomain } from './ir';
@@ -18,13 +18,10 @@ import { inpaintTrace, metalTrace } from './mar';
 import { Rng, hashSeed } from './rng';
 import { QUALITY, SFOV_MM, SOURCE_DET_MM, SOURCE_ISO_MM, type SliceRequest, type SliceResult } from './protocol';
 
-const LW_SCALE = (LUT_NW - 1) / LUT_W_MAX;
-const LB_SCALE = (LUT_NB - 1) / (LUT_B_MAX - LUT_B_MIN);
-
 /** Gürültü kalibrasyon sabiti: ışın başına NEQ = K · mAs_eff · T(mm) · ds(mm) / nv · neq0(grup) */
 export const NOISE_K = 5.2e6;
 /** Elektronik gürültü (kuanta eşdeğeri) */
-export const ELECTRONIC_SIGMA = 3.0;
+export const ELECTRONIC_SIGMA = 2.0;
 
 const polyCache = new Map<string, PolyModel>();
 export function getPoly(kVp: number, bowtie: 'body' | 'head', nb: number, ds: number): PolyModel {
@@ -81,6 +78,36 @@ function getWork(n: number): Work {
   return work;
 }
 
+function starvationCorrection(p: Float32Array, neq: Float32Array, nv: number, nb: number): void {
+  const THR = 25;
+  let any = false;
+  for (let i = 0; i < neq.length; i++) if (neq[i] < THR) { any = true; break; }
+  if (!any) return;
+  const src = new Float32Array(p);
+  for (let v = 0; v < nv; v++) {
+    for (let b = 0; b < nb; b++) {
+      const k = v * nb + b;
+      const n = neq[k];
+      if (n >= THR) continue;
+      const r = THR / Math.max(n, 0.02);
+      const hw = Math.min(12, 1 + Math.round(2.2 * Math.log2(r + 1)));
+      const hv = n < 0.5 ? 2 : n < 4 ? 1 : 0;
+      let s = 0, c = 0;
+      for (let dv = -hv; dv <= hv; dv++) {
+        const vv = (v + dv + nv) % nv;
+        for (let db = -hw; db <= hw; db++) {
+          const bb = b + db;
+          if (bb < 0 || bb >= nb) continue;
+          s += src[vv * nb + bb];
+          c++;
+        }
+      }
+      const a = Math.min(0.97, 0.4 * Math.sqrt(r));
+      p[k] = src[k] * (1 - a) + (s / c) * a;
+    }
+  }
+}
+
 function blurRows(a: Float32Array, nv: number, nb: number, sigmaBins: number): void {
   if (sigmaBins < 0.05) return;
   const k1 = Math.exp(-1 / (2 * sigmaBins * sigmaBins));
@@ -123,7 +150,8 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
   // --- odak noktası + dedektör açıklığı bulanıklığı
   const mag = (SOURCE_DET_MM - SOURCE_ISO_MM) / SOURCE_DET_MM;
   const focalIso = (req.focalLarge ? 1.2 : 0.7) * mag;
-  const fwhm = Math.sqrt(focalIso * focalIso + 0.25 * Q.ds * Q.ds);
+  // dedektör açıklığı (kutu, genişlik ≈ kanal aralığı → σ² = ds²/12) + odak noktası (Gauss)
+  const fwhm = Math.sqrt(focalIso * focalIso + (2.355 * 2.355 * Q.ds * Q.ds) / 12);
   const sigB = fwhm / 2.355 / Q.ds;
   for (let c = 0; c < 4; c++) if (c < 2 || ras.hasI || ras.hasM) blurRows(L[c], geo.nv, geo.nb, sigB);
 
@@ -133,6 +161,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
   const te = new Float32Array(NR);
   const neqRel = new Float32Array(NR);
   const useIM = ras.hasI || ras.hasM;
+  const pa = new Float64Array(2), pb = new Float64Array(2);
   for (let v = 0; v < geo.nv; v++) {
     const o = v * nb;
     for (let b = 0; b < nb; b++) {
@@ -144,29 +173,16 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
         neqRel[k] = 1;
         continue;
       }
-      const g = poly.groups[poly.groupOfBin[b]];
-      if (li === 0 && lm === 0 && lw >= 0 && lb > LUT_B_MIN && lw < LUT_W_MAX && lb < LUT_B_MAX) {
-        const uw = lw * LW_SCALE, ub = (lb - LUT_B_MIN) * LB_SCALE;
-        const iw = uw | 0, ib = ub | 0;
-        const fw = uw - iw, fb = ub - ib;
-        const lut = g.lut;
-        const o00 = 2 * (ib * LUT_NW + iw), o01 = o00 + 2, o10 = o00 + 2 * LUT_NW, o11 = o10 + 2;
-        const pA = (lut[o00] * (1 - fw) + lut[o01] * fw) * (1 - fb) + (lut[o10] * (1 - fw) + lut[o11] * fw) * fb;
-        const pB = (lut[o00 + 1] * (1 - fw) + lut[o01 + 1] * fw) * (1 - fb) + (lut[o10 + 1] * (1 - fw) + lut[o11 + 1] * fw) * fb;
-        te[k] = Math.exp(-pA);
-        neqRel[k] = Math.exp(-pB);
-        continue;
+      const f = poly.groupF[b];
+      polyEval(poly.groups[poly.groupA[b]], nE, lw, lb, li, lm, pa);
+      if (f > 0.001) {
+        polyEval(poly.groups[poly.groupB[b]], nE, lw, lb, li, lm, pb);
+        te[k] = pa[0] + (pb[0] - pa[0]) * f;
+        neqRel[k] = pa[1] + (pb[1] - pa[1]) * f;
+      } else {
+        te[k] = pa[0];
+        neqRel[k] = pa[1];
       }
-      const mu = g.mu, wE = g.wE, w2 = g.w2;
-      let s1 = 0, s2 = 0;
-      for (let e = 0; e < nE; e++) {
-        const x = lw * mu[e] + lb * mu[nE + e] + li * mu[2 * nE + e] + lm * mu[3 * nE + e];
-        const ex = Math.exp(-x);
-        s1 += wE[e] * ex;
-        s2 += w2[e] * ex;
-      }
-      te[k] = s1;
-      neqRel[k] = s2 > 0 ? (s1 * s1) / s2 : 0;
     }
   }
 
@@ -206,23 +222,23 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
   const countsView = new Float32Array(nb);
   const fluxProfile = new Float32Array(nb);
   const es = ELECTRONIC_SIGMA;
+  const sig = new Float32Array(NR); // ölçülen göreli sinyal I/I0
+  const n0row = new Float32Array(nb);
   for (let v = 0; v < geo.nv; v++) {
     const o = v * nb;
     const mv = vmod[v];
     for (let b = 0; b < nb; b++) {
       const k = o + b;
-      const g = poly.groups[poly.groupOfBin[b]];
-      const n0 = base * mv * (g.neq0 / g0neq);
-      if (v === 0) fluxProfile[b] = g.neq0 / g0neq;
+      const gA = poly.groups[poly.groupA[b]], gB = poly.groups[poly.groupB[b]], gf = poly.groupF[b];
+      const neq0 = gA.neq0 + (gB.neq0 - gA.neq0) * gf;
+      const n0 = base * mv * (neq0 / g0neq);
+      n0row[b] = n0;
+      if (v === 0) fluxProfile[b] = neq0 / g0neq;
       const neq = n0 * neqRel[k];
       let meas: number;
       if (neq < 25) meas = rng.poisson(neq) + es * rng.gauss();
       else meas = neq + Math.sqrt(neq + es * es) * rng.gauss();
-      if (meas < 0.35) meas = 0.35;
-      const signal = te[k] * (meas / Math.max(neq, 1e-9));
-      let pv = -Math.log(Math.max(signal, 1e-12));
-      if (!isFinite(pv)) pv = 30;
-      p[k] = applyBhc(g, pv);
+      sig[k] = te[k] * (meas / Math.max(neq, 1e-9));
       neqAbs[k] = neq;
       if (v === midV) countsView[b] = meas;
       if (te[k] < 0.999) {
@@ -232,7 +248,22 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
         if (neq < 20) starved++;
       }
     }
+    for (let b = 0; b < nb; b++) {
+      const k = o + b;
+      const floor = 1.0 / Math.max(1, n0row[b]);
+      if (sig[k] < floor) sig[k] = floor;
+      let pv = -Math.log(sig[k]);
+      if (!isFinite(pv)) pv = 30;
+      const gA = poly.groups[poly.groupA[b]], gB = poly.groups[poly.groupB[b]], gf = poly.groupF[b];
+      p[k] = gf > 0.001 ? applyBhc(gA, pv) * (1 - gf) + applyBhc(gB, pv) * gf : applyBhc(gA, pv);
+    }
   }
+
+  // --- Düşük sinyal (foton açlığı) düzeltmesi: tüm ticari sistemlerde rekonstrüksiyondan önce
+  // uygulanan uyarlamalı 2B (kanal × görünüm) filtre. Çok düşük sayımlı ışınlar, sayım azaldıkça
+  // büyüyen bir pencerede komşularıyla ortalanır; sapma (metal izinde düşük tahmin) kalır →
+  // klasik koyu/parlak metal çizgileri, ancak tuz-biber gürültüsü bastırılır.
+  starvationCorrection(p, neqAbs, geo.nv, nb);
 
   // --- rekonstrüksiyon
   const kernel = KERNELS[req.kernel];
