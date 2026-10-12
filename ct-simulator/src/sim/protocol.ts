@@ -24,6 +24,8 @@ export const QUALITY: Record<Quality, QualityPreset> = {
 
 /** Tarama alanı (SFOV) çapı, mm */
 export const SFOV_MM = 500;
+/** Fantom rasterleştirme alanı (SFOV dışındaki vücut kısımlarını da içerir) */
+export const PHANTOM_GRID_MM = 700;
 /** Kaynak–izomerkez ve kaynak–dedektör mesafesi (mm) */
 export const SOURCE_ISO_MM = 570;
 export const SOURCE_DET_MM = 1040;
@@ -56,8 +58,21 @@ export interface SliceRequest {
   focalLarge: boolean;
   /** enjeksiyondan beri geçen süre (s) – null: kontrastsız */
   timeS: number | null;
-  /** helikal pencere (windmill) modellemesi için kesit içindeki z kayması genliği (mm) */
   seed: number;
+  /** taramanın başlangıcından bu kesitin (merkez) veri toplama anına kadar geçen süre (s) */
+  tAcq?: number;
+  /** gantri rotasyon süresi (s) – kesit verisinin zaman penceresi ≈ 0.62·rotasyon */
+  rotTime?: number;
+  /** solunum hareketi: diyafram tepe-tepe yer değiştirmesi (mm), periyot (s), faz (rad) */
+  breathAmp?: number;
+  breathPeriod?: number;
+  breathPhase?: number;
+  /** solunumun başladığı an (s): nefes tutma süresi aşılınca hasta nefes almaya başlar */
+  breathStartS?: number;
+  /** toplam z kolimasyonu (mm) – saçılma/ışın genişliği */
+  collimation?: number;
+  /** model tabanlı saçılma düzeltmesi */
+  scatterCorr?: boolean;
   debug?: boolean;
 }
 
@@ -71,6 +86,12 @@ export interface SliceStats {
   eRef: number;
   ms: number;
   accel: string;
+  /** aşama süreleri (ms) */
+  timing: Record<string, number>;
+  /** merkez ışında saçılma/birincil oranı (SPR, görünümler üzerinde ortalama) */
+  spr: number;
+  /** bu kesit boyunca diyafram yer değiştirme aralığı (mm; 0 = hareketsiz) */
+  motionMm: number;
 }
 
 export interface SliceDebug {

@@ -5,7 +5,7 @@
  * boyunca kısmi hacim etkisi modellenir.
  */
 import { fbm3, valueNoise3 } from '../sim/noise3';
-import type { BlobShape, EllShape, Paint, SegShape, Structure } from './types';
+import type { BlobShape, EllShape, Paint, SegShape, Structure, Texture } from './types';
 
 export interface Grid {
   n: number;
@@ -23,7 +23,53 @@ export interface BBox {
 
 export type ConcFn = (comp: string) => number;
 
+/**
+ * Doku gürültüsü önbelleği: bir dilim (slab) içinde doku alanı z'ye göre yavaş değiştiğinden
+ * gürültü, piksel başına yalnızca bir kez (dilim merkezi z'sinde) hesaplanır.
+ */
+export class TexCache {
+  private pool: Uint8Array[] = [];
+  private used = 0;
+  private map = new Map<string, Uint8Array>();
+  private last: { t: Texture | null; a: Uint8Array | null } = { t: null, a: null };
+  z = 0;
+  constructor(readonly n: number) {}
+  reset(z: number) {
+    this.z = z;
+    this.map.clear();
+    this.used = 0;
+    this.last = { t: null, a: null };
+  }
+  /** Aynı tür + ölçekteki dokular tek alanı paylaşır (8 bit, 255 = henüz hesaplanmadı). */
+  get(t: Texture): Uint8Array {
+    if (this.last.t === t) return this.last.a!;
+    const key = t.kind + '|' + t.scale + '|' + (t.kind === 'trab' ? 0 : t.seed);
+    let a = this.map.get(key);
+    if (!a) {
+      a = this.pool[this.used];
+      if (!a) {
+        a = new Uint8Array(this.n * this.n);
+        this.pool.push(a);
+      }
+      a.fill(255);
+      this.used++;
+      this.map.set(key, a);
+    }
+    this.last = { t, a };
+    return a;
+  }
+}
+
 const tmpV = new Float32Array(4);
+
+/** Solunum yer değiştirmesinin z'ye göre ağırlığı: diyafram–üst batında en büyük. */
+export function breathWeight(z: number): number {
+  if (z < 300) return 0;
+  if (z < 430) return (z - 300) / 130;
+  if (z < 650) return 1;
+  if (z < 820) return 1 - (0.8 * (z - 650)) / 170;
+  return 0.2;
+}
 
 export class PhantomModel {
   readonly structures: Structure[];
@@ -52,13 +98,31 @@ export class PhantomModel {
     });
   }
 
-  emitAt(z: number, out: Paint[]): void {
+  /**
+   * z düzlemindeki boyaları üretir. disp ≠ 0 ise solunumla hareket eden yapılar
+   * (motion katsayısıyla) z − disp·motion konumundan örneklenir; sıra (ressam) korunur.
+   */
+  emitAt(z: number, out: Paint[], disp = 0): void {
     out.length = 0;
-    const b = Math.floor(z / this.bucketMm) - this.zBase;
-    if (b < 0 || b >= this.buckets.length) return;
-    for (const idx of this.buckets[b]) {
+    if (!disp) {
+      const b = Math.floor(z / this.bucketMm) - this.zBase;
+      if (b < 0 || b >= this.buckets.length) return;
+      for (const idx of this.buckets[b]) {
+        const s = this.structures[idx];
+        if (z >= s.zMin && z <= s.zMax) s.emit(z, out);
+      }
+      return;
+    }
+    const ids = new Set<number>();
+    for (const zz of [z, z - disp]) {
+      const b = Math.floor(zz / this.bucketMm) - this.zBase;
+      if (b >= 0 && b < this.buckets.length) for (const idx of this.buckets[b]) ids.add(idx);
+    }
+    const sorted = [...ids].sort((a, b) => a - b);
+    for (const idx of sorted) {
       const s = this.structures[idx];
-      if (z >= s.zMin && z <= s.zMax) s.emit(z, out);
+      const zz = s.motion ? z - disp * s.motion * breathWeight(z) : z;
+      if (zz >= s.zMin && zz <= s.zMax) s.emit(zz, out);
     }
   }
 }
@@ -159,7 +223,7 @@ function covBlob(sh: BlobShape, cov: Float32Array, i0: number, i1: number, j0: n
  * Boyaları kanal tamponlarına (W,B,I,M) karıştırarak çizer.
  * Önce şekle özgü sıkı döngüde kaplama haritası hesaplanır, sonra ortak karıştırma.
  */
-export function rasterizePaints(paints: Paint[], g: Grid, buf: Float32Array[], z: number, conc: ConcFn | null, bb: BBox): void {
+export function rasterizePaints(paints: Paint[], g: Grid, buf: Float32Array[], z: number, conc: ConcFn | null, bb: BBox, tcache?: TexCache): void {
   const n = g.n, dx = g.dx, x0 = g.x0, y0 = g.y0;
   const inv = 1 / dx;
   const bW = buf[0], bB = buf[1], bI = buf[2], bM = buf[3];
@@ -272,8 +336,21 @@ export function rasterizePaints(paints: Paint[], g: Grid, buf: Float32Array[], z
         a *= opacity;
         let w = vW, b = vB, io = vI, m = vM;
         if (tex) {
-          const sc = 1 / tex.scale;
-          const nv = (tex.kind === 'noise' ? valueNoise3(x * sc, y * sc, z * sc, tex.seed) : fbm3(x * sc, y * sc, z * sc, tex.seed)) * 2 - 1;
+          let nv: number;
+          if (tcache) {
+            const arr = tcache.get(tex);
+            const q = arr[idx];
+            if (q === 255) {
+              const sc = 1 / tex.scale, zz = tcache.z;
+              const r = tex.kind === 'noise' ? valueNoise3(x * sc, y * sc, zz * sc, tex.seed) : fbm3(x * sc, y * sc, zz * sc, tex.seed);
+              const qq = Math.min(254, Math.max(0, Math.round(r * 254)));
+              arr[idx] = qq;
+              nv = (qq / 254) * 2 - 1;
+            } else nv = (q / 254) * 2 - 1;
+          } else {
+            const sc = 1 / tex.scale;
+            nv = (tex.kind === 'noise' ? valueNoise3(x * sc, y * sc, z * sc, tex.seed) : fbm3(x * sc, y * sc, z * sc, tex.seed)) * 2 - 1;
+          }
           if (tex.kind === 'noise') {
             const f = 1 + tex.amp * nv;
             w *= f; b *= f; io *= f;
@@ -304,6 +381,12 @@ export function rasterizePaints(paints: Paint[], g: Grid, buf: Float32Array[], z
   }
 }
 
+let texCache: TexCache | null = null;
+function getTexCache(n: number): TexCache {
+  if (!texCache || texCache.n !== n) texCache = new TexCache(n);
+  return texCache;
+}
+
 export interface SliceRaster {
   buf: Float32Array[]; // 4 kanal, n*n
   bb: BBox;
@@ -322,6 +405,7 @@ export function rasterizeSlab(
   g: Grid,
   concAt: ((z: number) => ConcFn) | null,
   work?: { tmp: Float32Array[]; out: Float32Array[] },
+  disp = 0,
 ): SliceRaster {
   const N = g.n * g.n;
   const tmp = work?.tmp ?? [0, 1, 2, 3].map(() => new Float32Array(N));
@@ -330,6 +414,13 @@ export function rasterizeSlab(
   const total: BBox = { i0: g.n, i1: -1, j0: g.n, j1: -1 };
   const paints: Paint[] = [];
   let prev: BBox | null = null;
+  const tc = getTexCache(g.n);
+  let zc = 0, wsum = 0;
+  for (let k = 0; k < zs.length; k++) {
+    zc += zs[k] * ws[k];
+    wsum += ws[k];
+  }
+  tc.reset(wsum > 0 ? zc / wsum : zs[0]);
   for (let k = 0; k < zs.length; k++) {
     // önceki kutuyu temizle
     if (prev && prev.i1 >= prev.i0) {
@@ -341,8 +432,8 @@ export function rasterizeSlab(
       for (let c = 0; c < 4; c++) tmp[c].fill(0);
     }
     const bb: BBox = { i0: g.n, i1: -1, j0: g.n, j1: -1 };
-    model.emitAt(zs[k], paints);
-    rasterizePaints(paints, g, tmp, zs[k], concAt ? concAt(zs[k]) : null, bb);
+    model.emitAt(zs[k], paints, disp);
+    rasterizePaints(paints, g, tmp, zs[k], concAt ? concAt(zs[k]) : null, bb, zs.length > 1 ? tc : undefined);
     const w = ws[k];
     if (bb.i1 >= bb.i0) {
       for (let c = 0; c < 4; c++) {

@@ -1,7 +1,7 @@
 /** Uygulama durumu (zustand). Büyük görüntü dizileri series.ts içinde, burada yalnızca meta veriler. */
 import { create } from 'zustand';
 import { DEFAULT_PHANTOM_CONFIG, type PhantomConfig } from '../phantom/types';
-import { PROTOCOLS, type ScanParams } from '../sim/scan';
+import { PROTOCOLS, type Breathing, type ScanParams } from '../sim/scan';
 
 export type ViewMode = 'room' | 'viewer' | 'physics';
 export type ConsoleTab = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'recon';
@@ -80,7 +80,7 @@ export interface AppState {
   view: ViewMode;
   tab: ConsoleTab;
   step: Step;
-  patient: { registered: boolean; onTable: boolean; id: string; age: number; sex: 'M' | 'F'; cfg: PhantomConfig };
+  patient: { registered: boolean; onTable: boolean; id: string; age: number; sex: 'M' | 'F'; cfg: PhantomConfig; breathing: Breathing };
   params: ScanParams;
   topo: TopoMeta;
   scan: ScanRuntime;
@@ -119,7 +119,7 @@ export const useApp = create<AppState>()((set, get) => ({
   view: 'room',
   tab: 'patient',
   step: 'patient',
-  patient: { registered: false, onTable: false, id: 'SIM-0001', age: 54, sex: 'M', cfg: { ...DEFAULT_PHANTOM_CONFIG, arms: defaultProtocol.arms } },
+  patient: { registered: false, onTable: false, id: 'SIM-0001', age: 54, sex: 'M', cfg: { ...DEFAULT_PHANTOM_CONFIG, arms: defaultProtocol.arms }, breathing: 'hold' },
   params: { protocolId: defaultProtocol.id, ...defaultProtocol.params },
   topo: { status: 'none', view: 'AP', z0: defaultProtocol.topoRange[0], z1: defaultProtocol.topoRange[1], kVp: 120, mA: 40, rows: 0, cols: 0, dz: 2, dx: 1.6, rowsDone: 0, version: 0, isoYp: 0 },
   scan: { status: 'idle', message: '', progress: 0, t: 0, currentZ: 0, currentmA: 0, countdown: 0, dlpAccum: 0, reconDone: 0, reconTotal: 0, reconSeriesId: null, slicesPerSec: 0, liveVer: 0 },

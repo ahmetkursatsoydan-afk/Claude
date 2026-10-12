@@ -255,7 +255,7 @@ export function Viewport({ idx }: { idx: number }) {
             {`SIM-CT 256 (eğitim)\n${sd.params.kVp} kV  ${ps ? ps.mAsEff.toFixed(0) : sd.plan.mAsEffNominal.toFixed(0)} eff.mAs${ps ? `  ${ps.mA.toFixed(0)} mA` : ''}\nRot ${sd.params.rotTime}s  Pitch ${sd.params.pitch}\nCTDIvol ${ps ? ps.ctdi.toFixed(1) : sd.plan.ctdiVol.toFixed(1)} mGy${ps?.t != null ? `\nt+${ps.t.toFixed(0)} s kontrast` : ''}`}
           </div>
           <div className="ov bl">
-            {`Kesit ${sd.params.thickness} mm / ${sd.params.interval} mm\nKernel ${KERNELS[sd.params.kernel].label}  ${sd.params.recon === 'IR' ? `IR-${sd.params.irLevel}` : 'FBP'}${sd.params.mar ? ' MAR' : ''}\nDFOV ${sd.params.dfov} mm  ${sd.m}×${sd.m}${st ? `\nσ≈${st.noiseSigma.toFixed(1)} HU  NEQ ${st.meanNeq.toFixed(0)}` : ''}`}
+            {`Kesit ${sd.params.thickness} mm / ${sd.params.interval} mm\nKernel ${KERNELS[sd.params.kernel].label}  ${sd.params.recon === 'IR' ? `IR-${sd.params.irLevel}` : 'FBP'}${sd.params.mar ? ' MAR' : ''}\nDFOV ${sd.params.dfov} mm  ${sd.m}×${sd.m}${st ? `\nσ≈${st.noiseSigma.toFixed(1)} HU  NEQ ${st.meanNeq.toFixed(0)}${st.motionMm > 0.5 ? `\nSolunum hareketi ${st.motionMm.toFixed(1)} mm` : ''}${!sd.params.scatterCorr ? `\nSaçılma düzeltmesi KAPALI (SPR ${st.spr.toFixed(2)})` : ''}` : ''}`}
           </div>
           <div className="ov br">
             {`W ${vp.ww.toFixed(0)}  L ${vp.wl.toFixed(0)}\nZoom ${(vp.zoom * 100).toFixed(0)}%${cursor ? `\n(${cursor.mm[0].toFixed(1)}, ${cursor.mm[1].toFixed(1)}) mm\nHU ${cursor.hu ?? '—'}` : ''}`}

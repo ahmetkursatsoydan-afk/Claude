@@ -17,6 +17,12 @@ import { neck } from './anatomy/neck';
 import { table } from './anatomy/table';
 import { implants } from './anatomy/implants';
 
+/** Solunumla hareket eden yapılar için katsayı ata. */
+function moving(list: Structure[], k: number): Structure[] {
+  for (const s of list) s.motion = k;
+  return list;
+}
+
 export function buildPhantom(cfg: PhantomConfig): PhantomModel {
   const h = head(cfg);
   const s: Structure[] = [
@@ -25,14 +31,14 @@ export function buildPhantom(cfg: PhantomConfig): PhantomModel {
     ...legs(cfg),
     ...h.soft,
     ...bodyWall(cfg),
-    ...diaphragm(),
-    ...lungTrees(cfg),
+    ...moving(diaphragm(), 1),
+    ...moving(lungTrees(cfg), 0.6),
     ...mediastinumFat(),
     ...neck(),
     ...trunkMuscles(),
-    ...abdomen(cfg),
+    ...moving(abdomen(cfg), 0.85),
     ...pelvis(cfg),
-    ...heart(),
+    ...moving(heart(), 0.3),
     ...greatVessels(),
     ...airways(),
     ...esophagus(),

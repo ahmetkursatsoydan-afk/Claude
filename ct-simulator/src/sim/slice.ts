@@ -9,19 +9,39 @@
  */
 import { KERNELS } from '../physics/kernels';
 import { makeConcFn } from '../physics/contrast';
-import { rasterizeSlab, type Grid, type PhantomModel } from '../phantom/raster';
+import { breathWeight, rasterizeSlab, type Grid, type PhantomModel } from '../phantom/raster';
 import { buildPolyModel, applyBhc, polyEval, type PolyModel } from './poly';
 import { projectJoseph, backproject, type ProjGeom, type ReconGrid } from './projector';
 import { filterSinogram } from './fbp';
 import { adaptiveSinoFilter, estimateNoise, irImageDomain } from './ir';
 import { inpaintTrace, metalTrace } from './mar';
 import { Rng, hashSeed } from './rng';
-import { QUALITY, SFOV_MM, SOURCE_DET_MM, SOURCE_ISO_MM, type SliceRequest, type SliceResult } from './protocol';
+import { PHANTOM_GRID_MM, QUALITY, SFOV_MM, SOURCE_DET_MM, SOURCE_ISO_MM, type SliceRequest, type SliceResult } from './protocol';
 
 /** Gürültü kalibrasyon sabiti: ışın başına NEQ = K · mAs_eff · T(mm) · ds(mm) / nv · neq0(grup) */
 export const NOISE_K = 5.2e6;
 /** Elektronik gürültü (kuanta eşdeğeri) */
 export const ELECTRONIC_SIGMA = 2.0;
+/** Saçılma genliği (kolimasyon başına) ve çekirdek genişliği (izomerkezde, mm) */
+export const SCATTER_K = 4.3e-4;
+export const SCATTER_SIGMA_MM = 55;
+
+/** Üç kez kutu bulanıklığı ≈ Gauss (σ ≈ r). Kenarlar sıfır dolgulu. */
+function boxBlur3(a: Float32Array, tmp: Float32Array, n: number, r: number): void {
+  const w = 2 * Math.round(r * 1.0) + 1;
+  const h = (w - 1) >> 1;
+  for (let pass = 0; pass < 3; pass++) {
+    let acc = 0;
+    for (let i = 0; i <= h && i < n; i++) acc += a[i];
+    for (let i = 0; i < n; i++) {
+      tmp[i] = acc / w;
+      const add = i + h + 1, sub = i - h;
+      if (add < n) acc += a[add];
+      if (sub >= 0) acc -= a[sub];
+    }
+    a.set(tmp);
+  }
+}
 
 const polyCache = new Map<string, PolyModel>();
 export function getPoly(kVp: number, bowtie: 'body' | 'head', nb: number, ds: number): PolyModel {
@@ -36,11 +56,11 @@ export function getPoly(kVp: number, bowtie: 'body' | 'head', nb: number, ds: nu
 }
 
 /** Kutu (nominal kalınlık) ⊛ üçgen (helikal enterpolasyon) kesit hassasiyet profili. */
-export function sspSamples(thickness: number, rowWidth: number, pitch: number, dz: number): { offs: number[]; ws: number[]; fwhm: number } {
+export function sspSamples(thickness: number, rowWidth: number, pitch: number, dz: number, maxN = 6): { offs: number[]; ws: number[]; fwhm: number } {
   const h = rowWidth * (0.45 + 0.45 * pitch); // üçgen yarı tabanı (= FWHM)
   const a = thickness / 2;
   const span = thickness + 2 * h;
-  const n = Math.max(2, Math.min(7, Math.ceil(span / dz)));
+  const n = Math.max(2, Math.min(maxN, Math.ceil(span / dz)));
   const offs: number[] = [], ws: number[] = [];
   let sum = 0;
   for (let k = 0; k < n; k++) {
@@ -131,9 +151,18 @@ export interface Accel {
 
 export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Accel | null): SliceResult {
   const t0 = performance.now();
+  const tm: Record<string, number> = {};
+  let tl = t0;
+  const lap = (k: string) => {
+    const t = performance.now();
+    tm[k] = (tm[k] ?? 0) + (t - tl);
+    tl = t;
+  };
   const Q = QUALITY[req.quality];
   // --- fantom ızgarası (SFOV'u kapsar, izomerkez merkezli)
-  let n = Math.ceil(SFOV_MM / Q.dx);
+  // Fantom ızgarası SFOV'dan geniştir (700 mm): 50 cm tarama alanını aşan vücut kısımları
+  // (obez hasta, yanlarda kollar) dedektörün dışında kalır → kesilme (truncation) artefaktı.
+  let n = Math.ceil(PHANTOM_GRID_MM / Q.dx);
   if (n % 2) n++;
   const dx = Q.dx;
   const grid: Grid = { n, dx, x0: req.isoXp - ((n - 1) / 2) * dx, y0: req.isoYp - ((n - 1) / 2) * dx };
@@ -142,21 +171,72 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   const geo: ProjGeom = { nv: Q.nv, nb, ds: Q.ds };
   const NR = geo.nv * geo.nb;
 
+  // --- solunum hareketi: kesitin verisi ≈ 0.62·rotasyon süresince toplanır (yarım tarama + yelpaze).
+  // Bu süre boyunca diyafram/karın organları hareket ederse farklı görünümler farklı anatomiyi
+  // görür → tutarsız sinogram → çift kontur, çizgi ve bulanıklık. Ayrıca her kesit farklı anda
+  // alındığından MPR'de diyafram kenarı basamaklı/kopuk görünür.
+  const period = Math.max(1, req.breathPeriod ?? 4);
+  const tAcq = req.tAcq ?? 0;
+  const bStart = req.breathStartS ?? 0;
+  const amp = (req.breathAmp ?? 0) * (bStart > 0 ? Math.max(0, Math.min(1, (tAcq - bStart) / 3)) : 1);
+  const tSpan = 0.62 * (req.rotTime ?? 0.5);
+  const dispAt = (t: number) => amp > 0 ? 0.5 * amp * Math.sin((2 * Math.PI * t) / period + (req.breathPhase ?? 0)) : 0;
+  const moving = amp > 0 && breathWeight(req.z) > 0.02;
+  // Hareket varsa K anahtar an (zaman) için fantom rasterleştirilir; her görünümün izdüşümü komşu
+  // iki anahtar anın izdüşümleri arasında doğrusal harmanlanır → görünüm açısıyla sürekli değişen anatomi.
+  const K = moving ? (req.quality === 'fast' ? 3 : 4) : 1;
+
   // --- kısmi hacim: kesit profili boyunca alt örnekleme
-  const ssp = sspSamples(req.thickness, req.rowWidth, req.pitch, Q.dz);
+  const ssp = sspSamples(req.thickness, req.rowWidth, req.pitch, Q.dz, moving ? 4 : 6);
   const zs = ssp.offs.map((o) => req.z + o);
   const conc = makeConcFn(req.timeS);
   const w = getWork(n);
-  const ras = rasterizeSlab(model, zs, ssp.ws, grid, conc ? () => conc : null, w);
-
-  // --- kanal başına çizgi integralleri (g/cm²)
   const L = [0, 1, 2, 3].map(() => new Float32Array(NR));
-  if (accel) accel.forward(ras.buf, n, dx, ras.bb, geo, L);
-  else {
-    projectJoseph([ras.buf[0], ras.buf[1]], n, dx, ras.bb, geo, [L[0], L[1]]);
-    if (ras.hasI || ras.hasM) projectJoseph([ras.buf[2], ras.buf[3]], n, dx, ras.bb, geo, [L[2], L[3]]);
+  const tmpL = K > 1 ? [0, 1, 2, 3].map(() => new Float32Array(NR)) : null;
+  const segV = (sIdx: number) => Math.floor((sIdx * geo.nv) / Math.max(1, K - 1));
+  let hasI = false, hasM = false;
+  let ras: ReturnType<typeof rasterizeSlab> | null = null;
+  let dMin = Infinity, dMax = -Infinity;
+  for (let k = 0; k < K; k++) {
+    const disp = moving ? dispAt(tAcq + (k / (K - 1) - 0.5) * tSpan) : 0;
+    dMin = Math.min(dMin, disp);
+    dMax = Math.max(dMax, disp);
+    ras = rasterizeSlab(model, zs, ssp.ws, grid, conc ? () => conc : null, w, disp);
+    hasI ||= ras.hasI;
+    hasM ||= ras.hasM;
+    lap('raster');
+    // --- kanal başına çizgi integralleri (g/cm²)
+    if (K === 1) {
+      if (accel) accel.forward(ras.buf, n, dx, ras.bb, geo, L);
+      else {
+        projectJoseph([ras.buf[0], ras.buf[1]], n, dx, ras.bb, geo, [L[0], L[1]]);
+        if (ras.hasI || ras.hasM) projectJoseph([ras.buf[2], ras.buf[3]], n, dx, ras.bb, geo, [L[2], L[3]]);
+      }
+    } else {
+      // bu anahtar anın etkilediği görünümler: önceki ve sonraki segment
+      const lo = segV(Math.max(0, k - 1)), hi = segV(Math.min(K - 1, k + 1));
+      const im = ras.hasI || ras.hasM;
+      if (accel) accel.forward(ras.buf, n, dx, ras.bb, geo, tmpL!);
+      else {
+        projectJoseph([ras.buf[0], ras.buf[1]], n, dx, ras.bb, geo, [tmpL![0], tmpL![1]], { v0: lo, v1: hi });
+        if (im) projectJoseph([ras.buf[2], ras.buf[3]], n, dx, ras.bb, geo, [tmpL![2], tmpL![3]], { v0: lo, v1: hi });
+      }
+      for (let v = lo; v < hi; v++) {
+        const sIdx = v < segV(k) ? k - 1 : k; // görünümün segmenti
+        const va = segV(sIdx), vb = segV(sIdx + 1);
+        const f = (v - va) / Math.max(1, vb - va);
+        const wk = sIdx === k ? 1 - f : f;
+        const o = v * nb;
+        for (let c = 0; c < (im ? 4 : 2); c++) {
+          const src = tmpL![c], dst = L[c];
+          for (let bb = 0; bb < nb; bb++) dst[o + bb] += wk * src[o + bb];
+        }
+      }
+    }
+    lap('proj');
   }
-
+  ras = { ...ras!, hasI, hasM };
+  const motionMm = moving ? (dMax - dMin) * breathWeight(req.z) : 0;
   // --- odak noktası + dedektör açıklığı bulanıklığı
   const mag = (SOURCE_DET_MM - SOURCE_ISO_MM) / SOURCE_DET_MM;
   const focalIso = (req.focalLarge ? 1.2 : 0.7) * mag;
@@ -196,6 +276,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
     }
   }
 
+  lap('poly');
   // --- açısal mA modülasyonu (ATCM)
   const vmod = new Float32Array(geo.nv).fill(1);
   if (req.angularMod) {
@@ -234,22 +315,46 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   const es = ELECTRONIC_SIGMA;
   const sig = new Float32Array(NR); // ölçülen göreli sinyal I/I0
   const n0row = new Float32Array(nb);
+  // --- saçılma: birincil akı × −ln(T) (saçılma olasılığı) → geniş çekirdekle dedektöre yayılır.
+  // Genlik toplam kolimasyonla artar (geniş ışın → daha çok saçılan hacim; 2B ızgara ile sınırlı).
+  const coll = req.collimation ?? 0;
+  const kScat = coll > 0 ? SCATTER_K * (coll / (1 + coll / 150)) : 0;
+  const eta = req.scatterCorr === false ? 0 : 0.9;
+  const scat = new Float32Array(nb);
+  const sTmp = new Float32Array(nb);
+  const sRad = Math.max(1, Math.round(SCATTER_SIGMA_MM / Q.ds));
+  const cbin = Math.floor(nb / 2);
+  let sprSum = 0;
   for (let v = 0; v < geo.nv; v++) {
     const o = v * nb;
     const mv = vmod[v];
     for (let b = 0; b < nb; b++) {
-      const k = o + b;
       const gA = poly.groups[poly.groupA[b]], gB = poly.groups[poly.groupB[b]], gf = poly.groupF[b];
       const neq0 = gA.neq0 + (gB.neq0 - gA.neq0) * gf;
-      const n0 = base * mv * (neq0 / g0neq);
-      n0row[b] = n0;
+      n0row[b] = base * mv * (neq0 / g0neq);
       if (v === 0) fluxProfile[b] = neq0 / g0neq;
+    }
+    if (kScat > 0) {
+      for (let b = 0; b < nb; b++) {
+        const t = te[o + b];
+        scat[b] = t < 0.999 ? n0row[b] * t * -Math.log(t) : 0;
+      }
+      boxBlur3(scat, sTmp, nb, sRad);
+      for (let b = 0; b < nb; b++) scat[b] *= kScat;
+    }
+    for (let b = 0; b < nb; b++) {
+      const k = o + b;
+      const n0 = n0row[b];
       const neq = n0 * neqRel[k];
+      const sc = kScat > 0 ? scat[b] : 0;
+      const tot = neq + sc;
       let meas: number;
-      if (neq < 25) meas = rng.poisson(neq) + es * rng.gauss();
-      else meas = neq + Math.sqrt(neq + es * es) * rng.gauss();
-      sig[k] = te[k] * (meas / Math.max(neq, 1e-9));
-      neqAbs[k] = neq;
+      if (tot < 25) meas = rng.poisson(tot) + es * rng.gauss();
+      else meas = tot + Math.sqrt(tot + es * es) * rng.gauss();
+      // dedektör toplam (birincil + saçılan) sayar; düzeltme saçılma tahminini çıkarır
+      sig[k] = te[k] * ((meas - eta * sc) / Math.max(neq, 1e-9));
+      neqAbs[k] = (neq * neq) / Math.max(tot, 1e-9); // etkin NEQ: saçılma sinyal katmadan gürültü ekler
+      if (b === cbin) sprSum += sc / Math.max(neq, 1e-9);
       if (v === midV) countsView[b] = meas;
       if (te[k] < 0.999) {
         sumNeq += neq;
@@ -275,6 +380,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   // klasik koyu/parlak metal çizgileri, ancak tuz-biber gürültüsü bastırılır.
   starvationCorrection(p, neqAbs, geo.nv, nb);
 
+  lap('noise');
   // --- rekonstrüksiyon
   const kernel = KERNELS[req.kernel];
   if (req.recon === 'IR') adaptiveSinoFilter(p, neqAbs, geo.nv, nb, 0.3 + 0.12 * req.irLevel);
@@ -345,8 +451,11 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
       hasMetal: ras.hasM,
       hasIodine: ras.hasI,
       eRef: poly.eRef,
-      ms: performance.now() - t0,
+      ms: (lap('recon'), performance.now() - t0),
+      timing: tm,
       accel: accel ? accel.name : 'CPU',
+      spr: sprSum / geo.nv,
+      motionMm,
     },
   };
 

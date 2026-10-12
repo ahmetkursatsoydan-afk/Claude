@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useApp } from '../../state/store';
 import { currentPlan, isBusy, startScan } from '../../app/controller';
-import { DETECTOR_CONFIGS, ROW_WIDTH } from '../../sim/scan';
+import { DETECTOR_CONFIGS, ROW_WIDTH, scatterSprEstimate } from '../../sim/scan';
 import { KERNELS, mtfAt } from '../../physics/kernels';
 import { CONTRAST_PHASES } from '../../physics/contrast';
 import { QUALITY } from '../../sim/protocol';
@@ -57,6 +57,9 @@ export function PlanTab() {
         </Row>
         <Row label="Kolimasyon">
           <Seg value={p.rows} disabled={busy} onChange={(v) => setParams({ rows: v })} options={DETECTOR_CONFIGS.map((r) => ({ v: r, l: `${r}×${ROW_WIDTH}` }))} />
+        </Row>
+        <Row label="Saçılma düzeltmesi" title="Geniş kolimasyonda saçılan fotonlar dedektöre ulaşır: HU düşmesi, kupa ve koyu bantlar. Model tabanlı düzeltme saçılma tahminini çıkarır (gürültü biraz artar).">
+          <Toggle value={p.scatterCorr} disabled={busy} onChange={(v) => setParams({ scatterCorr: v })} label={`${p.scatterCorr ? 'Açık' : 'Kapalı'} · SPR ≈ ${scatterSprEstimate(plan.collimation).toFixed(2)}`} />
         </Row>
       </Section>
 

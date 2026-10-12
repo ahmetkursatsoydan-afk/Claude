@@ -92,6 +92,8 @@ export interface Structure {
   zMin: number;
   zMax: number;
   emit(z: number, out: Paint[]): void;
+  /** solunumla kranio-kaudal yer değiştirme katsayısı (0 = sabit, 1 = diyafram) */
+  motion?: number;
 }
 
 export interface PhantomConfig {

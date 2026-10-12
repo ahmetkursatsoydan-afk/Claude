@@ -14,6 +14,21 @@ export type DetRows = (typeof DETECTOR_CONFIGS)[number];
 export const MAX_POWER_KW = 100;
 export const MAX_MA = 1000;
 
+/** Hastanın solunum durumu (nefes tutma uyumu) */
+export type Breathing = 'hold' | 'shallow' | 'deep';
+/** Tipik nefes tutma süresi (s) – aşılırsa hasta nefes almaya başlar */
+export const BREATH_HOLD_S = 20;
+export const BREATHING: Record<Breathing, { label: string; title: string; amp: number; start: number }> = {
+  hold: { label: 'Nefes tutuyor', title: `Komutlara uyumlu; ~${BREATH_HOLD_S} s nefes tutabilir, sonra yüzeysel solunum başlar`, amp: 8, start: BREATH_HOLD_S },
+  shallow: { label: 'Yüzeysel solunum', title: 'Nefes tutamıyor: serbest yüzeysel solunum, diyafram ~10 mm', amp: 10, start: 0 },
+  deep: { label: 'Derin solunum', title: 'Uyumsuz/dispneik: derin solunum, diyafram ~25 mm', amp: 25, start: 0 },
+};
+/** Merkez ışında yaklaşık saçılma/birincil oranı (32 cm gövde, 2B ızgaralı dedektör) */
+export function scatterSprEstimate(collimationMm: number): number {
+  const f = (c: number) => c / (1 + c / 150);
+  return (0.1 * f(collimationMm)) / f(32);
+}
+
 export interface ScanParams {
   protocolId: string;
   kVp: number;
@@ -29,6 +44,8 @@ export interface ScanParams {
   recon: ReconAlg;
   irLevel: number;
   mar: boolean;
+  /** model tabanlı saçılma düzeltmesi */
+  scatterCorr: boolean;
   dfov: number;
   matrix: number;
   reconCx: number;
@@ -65,6 +82,7 @@ const base: Omit<ScanParams, 'protocolId'> = {
   recon: 'IR',
   irLevel: 3,
   mar: false,
+  scatterCorr: true,
   dfov: 360,
   matrix: 512,
   reconCx: 0,
@@ -258,7 +276,8 @@ export function planScan(sp: ScanParams, dw: DwProfile | null): ScanPlan {
   const mACurve: { z: number; mA: number }[] = slices.map((s) => ({ z: s.z, mA: s.mA }));
   const voxels = n * sp.matrix * sp.matrix;
   if (voxels > 140e6) warnings.push(`Seri çok büyük (${n} görüntü × ${sp.matrix}²). Aralığı artırın, matrisi küçültün veya tarama uzunluğunu kısaltın.`);
-  if (scanTime > 25) warnings.push(`Tarama süresi uzun (${scanTime.toFixed(1)} s) – nefes tutma güçlüğü / hareket artefaktı riski.`);
+  if (scanTime > BREATH_HOLD_S && z1 > 300 && z0 < 800) warnings.push(`Tarama süresi (${scanTime.toFixed(1)} s) tipik nefes tutma süresini (~${BREATH_HOLD_S} s) aşıyor – taramanın sonunda solunum hareketi artefaktı riski. Pitch'i artırın, rotasyonu hızlandırın veya kolimasyonu genişletin.`);
+  if (!sp.scatterCorr) warnings.push(`Saçılma düzeltmesi kapalı: HU değerleri düşer, görüntü ortasında kupa (cupping) ve yoğun yapılar arasında koyu bantlar (SPR ≈ ${scatterSprEstimate(collimation).toFixed(2)}).`);
   return {
     collimation,
     feed,

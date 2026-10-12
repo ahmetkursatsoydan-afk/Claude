@@ -1,5 +1,5 @@
 import { useApp } from '../../state/store';
-import { PROTOCOLS } from '../../sim/scan';
+import { BREATHING, PROTOCOLS, type Breathing } from '../../sim/scan';
 import { applyProtocol, isBusy, loadPatient, registerPatient, unloadPatient } from '../../app/controller';
 import { Row, Section, Seg, Select } from '../controls';
 
@@ -64,6 +64,18 @@ export function PatientTab() {
             ]}
           />
         </Row>
+        <Row label="Solunum">
+          <Seg
+            value={patient.breathing}
+            disabled={busy}
+            onChange={(v: Breathing) => set({ patient: { ...patient, breathing: v } })}
+            options={(Object.keys(BREATHING) as Breathing[]).map((k) => ({ v: k, l: BREATHING[k].label, title: BREATHING[k].title }))}
+          />
+        </Row>
+        <div className="hint">
+          Solunum hareketi diyafram, karaciğer, dalak, akciğer tabanı ve kalbi kraniyokaudal yönde yer değiştirir. Bir kesitin verisi ≈0.6 rotasyon süresince
+          toplandığından hareket; çift kontur, bulanıklık ve çizgi artefaktı, MPR'de basamaklanma üretir.
+        </div>
         <div className="hint">Anatomi tamamen sentetik ve prosedüreldir; gerçek klinik veri kullanılmaz.</div>
       </Section>
       <Section title="Hasta hazırlığı">

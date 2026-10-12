@@ -143,7 +143,7 @@ export function LiveDataPanel({ cycleSec = 4 }: { cycleSec?: number }) {
       <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
         <canvas ref={bpRef} style={{ width: 180, height: 180, borderRadius: 4 }} />
         <div className="hint">
-          z = {liveStore.z.toFixed(0)} mm · ortalama NEQ {liveStore.stats?.meanNeq.toFixed(0)} · foton açlığı %{((liveStore.stats?.starvedFrac ?? 0) * 100).toFixed(2)}
+          z = {liveStore.z.toFixed(0)} mm · ortalama NEQ {liveStore.stats?.meanNeq.toFixed(0)} · foton açlığı %{((liveStore.stats?.starvedFrac ?? 0) * 100).toFixed(2)} · SPR {(liveStore.stats?.spr ?? 0).toFixed(2)}{(liveStore.stats?.motionMm ?? 0) > 0.5 ? ` · solunum ${liveStore.stats!.motionMm.toFixed(1)} mm` : ''}
           <br />
           Her görünümde filtrelenmiş projeksiyon görüntüye “geri yayılır”; 180° tamamlandığında kesit oluşur. (Hızlı önizleme kalitesi)
         </div>

@@ -7,7 +7,7 @@ import { liveStore, seriesStore, topoStore, type SeriesData } from './data';
 import { useApp, type SeriesMeta } from '../state/store';
 import { getPool } from '../sim/pool';
 import { computeTopogramChunk, topogramRows, type TopogramChunk, type TopogramRequest } from '../sim/topogram';
-import { planScan, PROTOCOLS, ROW_WIDTH, type DwProfile, type ScanParams, type ScanPlan } from '../sim/scan';
+import { BREATHING, planScan, PROTOCOLS, ROW_WIDTH, type DwProfile, type ScanParams, type ScanPlan } from '../sim/scan';
 import type { SliceRequest, SliceResult } from '../sim/protocol';
 import { KERNELS } from '../physics/kernels';
 import { heightForCenter, isoYp, TABLE_SCAN_MIN_H, TOPO_SPEED, T_LOAD } from '../scene/dims';
@@ -192,6 +192,13 @@ function buildBase(p: ScanParams, plan: ScanPlan, seed: number): SliceRequest {
     focalLarge: plan.focalLarge,
     timeS: null,
     seed,
+    rotTime: p.rotTime,
+    collimation: plan.collimation,
+    scatterCorr: p.scatterCorr,
+    breathAmp: BREATHING[S().patient.breathing].amp,
+    breathStartS: BREATHING[S().patient.breathing].start,
+    breathPeriod: 4,
+    breathPhase: ((seed % 1000) / 1000) * 2 * Math.PI,
   };
 }
 
@@ -262,7 +269,7 @@ let lastRate = { t: 0, n: 0 };
 function dispatchSlice(sd: SeriesData, idx: number, prio: number, debug = false) {
   const z = sd.zs[idx];
   const ps = plannedAt(sd.plan, z);
-  const req: SliceRequest = { ...sd.base, z, mAsEff: ps.mAsEff, timeS: ps.t, debug };
+  const req: SliceRequest = { ...sd.base, z, mAsEff: ps.mAsEff, timeS: ps.t, tAcq: ps.tAcq, debug };
   const cfg = S().patient.cfg;
   getPool()
     .run<SliceResult>({ type: 'slice', cfg, req }, prio)
@@ -359,7 +366,7 @@ export async function startScan() {
     const zl = zFirst + dir * Math.min(plan.scanLength / 2, 40);
     const ps = plannedAt(plan, zl);
     getPool()
-      .run<SliceResult>({ type: 'slice', cfg: st.patient.cfg, req: { ...base, z: zl, quality: 'fast', matrix: 256, mAsEff: ps.mAsEff, timeS: ps.t, debug: true } }, -10)
+      .run<SliceResult>({ type: 'slice', cfg: st.patient.cfg, req: { ...base, z: zl, quality: 'fast', matrix: 256, mAsEff: ps.mAsEff, timeS: ps.t, tAcq: ps.tAcq, debug: true } }, -10)
       .then((r) => {
         liveStore.debug = r.debug ?? null;
         liveStore.z = zl;
@@ -394,7 +401,7 @@ export async function startScan() {
       t += 0.1 * speed;
     }
   } else {
-    upd({ status: 'breath', message: 'Nefes alın… ve tutun.', countdown: 2.5 });
+    upd({ status: 'breath', message: st.patient.breathing === 'hold' ? 'Nefes alın… ve tutun.' : 'Nefes alın… ve tutun. (Hasta nefesini tutamıyor – serbest solunum)', countdown: 2.5 });
     await sleep(2500);
   }
   if (abortFlag) return;
