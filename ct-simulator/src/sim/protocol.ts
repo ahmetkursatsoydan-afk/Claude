@@ -70,6 +70,7 @@ export interface SliceStats {
   hasIodine: boolean;
   eRef: number;
   ms: number;
+  accel: string;
 }
 
 export interface SliceDebug {

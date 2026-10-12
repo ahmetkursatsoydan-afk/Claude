@@ -3,6 +3,8 @@ import { useApp } from '../../state/store';
 import { abortScan, currentPlan, isBusy, skipContrastWait, startScan } from '../../app/controller';
 import { Progress, Section, Stat } from '../controls';
 import { LiveDataPanel } from './LiveDataPanel';
+import { liveStore } from '../../app/data';
+import { getPool } from '../../sim/pool';
 
 export function ScanTab() {
   const { scan, params: p, topo, set, log, series } = useApp();
@@ -38,6 +40,9 @@ export function ScanTab() {
           Rekonstrüksiyon {scan.reconDone}/{scan.reconTotal} {scan.slicesPerSec > 0 ? `· ${scan.slicesPerSec.toFixed(1)} görüntü/s` : ''}
         </div>
         <Progress value={scan.reconTotal ? scan.reconDone / scan.reconTotal : 0} />
+        <div className="hint">
+          Hesaplama: {getPool().usingWorkers ? `${getPool().size} web worker` : 'ana iş parçacığı'} · {liveStore.stats?.accel ?? '—'}
+        </div>
         <div className="stat-grid" style={{ marginTop: 8 }}>
           <Stat label="kV" value={p.kVp} />
           <Stat label="mA (anlık)" value={scanning ? scan.currentmA.toFixed(0) : plan.mAnominal.toFixed(0)} />

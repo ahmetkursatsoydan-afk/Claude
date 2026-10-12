@@ -7,9 +7,10 @@ import { ViewerWorkspace } from './ui/viewer/ViewerWorkspace';
 import { PhysicsView } from './ui/physics/PhysicsView';
 import { StatusBar } from './ui/StatusBar';
 import * as controller from './app/controller';
+import * as data from './app/data';
 
 // Otomasyon/test kancası (konsoldan erişim için)
-(window as unknown as Record<string, unknown>).__simct = { useApp, machine, controller };
+(window as unknown as Record<string, unknown>).__simct = { useApp, machine, controller, data };
 
 export default function App() {
   const view = useApp((s) => s.view);

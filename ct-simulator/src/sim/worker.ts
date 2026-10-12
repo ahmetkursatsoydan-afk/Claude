@@ -3,7 +3,8 @@
 import { buildPhantom } from '../phantom';
 import type { PhantomConfig } from '../phantom/types';
 import type { PhantomModel } from '../phantom/raster';
-import { computeSlice } from './slice';
+import { computeSlice, type Accel } from './slice';
+import { GpuCT } from './gpu';
 import { computeTopogramChunk, type TopogramRequest } from './topogram';
 import type { SliceRequest } from './protocol';
 
@@ -23,10 +24,32 @@ function getModel(cfg: PhantomConfig): PhantomModel {
   return model;
 }
 
+let accel: Accel | null | undefined;
+/** WebGL2 hızlandırıcıyı bir kez oluştur ve CPU'ya karşı doğrula. */
+function getAccel(): Accel | null {
+  if (accel !== undefined) return accel;
+  accel = null;
+  const g = GpuCT.create();
+  if (g) {
+    try {
+      const t = g.selfTest();
+      if (!t.ok) console.warn('GPU öz-testi başarısız, CPU kullanılacak', t);
+      else {
+        const b = g.isSoftware ? { gpu: Infinity, cpu: 0 } : g.benchmark();
+        if (b.gpu < b.cpu * 0.8) accel = { name: `GPU (${g.renderer.slice(0, 40)})`, forward: (a, bb, c, d, e, f) => g.forward(a, bb, c, d, e, f), backproject: (a, bb, c, d) => g.backproject(a, bb, c, d) };
+        else console.info('WebGL yazılımsal/yavaş; CPU yolu seçildi', g.renderer, b);
+      }
+    } catch (e) {
+      console.warn('GPU hızlandırma kullanılamıyor', e);
+    }
+  }
+  return accel;
+}
+
 export function runTask(t: WorkerTask): { result: unknown; transfer: Transferable[] } {
   const m = getModel(t.cfg);
   if (t.type === 'slice') {
-    const r = computeSlice(m, t.req);
+    const r = computeSlice(m, t.req, getAccel());
     const transfer: Transferable[] = [r.hu.buffer];
     if (r.debug) transfer.push(r.debug.sino.buffer, r.debug.filtered.buffer, r.debug.phantomPreview.buffer);
     return { result: r, transfer };

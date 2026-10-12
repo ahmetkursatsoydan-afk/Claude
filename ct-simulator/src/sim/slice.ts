@@ -122,7 +122,14 @@ function blurRows(a: Float32Array, nv: number, nb: number, sigmaBins: number): v
   }
 }
 
-export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResult {
+/** İsteğe bağlı hızlandırıcı (WebGL2). */
+export interface Accel {
+  name: string;
+  forward(chs: Float32Array[], n: number, dx: number, bb: import('../phantom/raster').BBox, geo: ProjGeom, outs: Float32Array[]): void;
+  backproject(q: Float32Array, geo: ProjGeom, rg: ReconGrid, out: Float32Array): void;
+}
+
+export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Accel | null): SliceResult {
   const t0 = performance.now();
   const Q = QUALITY[req.quality];
   // --- fantom ızgarası (SFOV'u kapsar, izomerkez merkezli)
@@ -144,8 +151,11 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
 
   // --- kanal başına çizgi integralleri (g/cm²)
   const L = [0, 1, 2, 3].map(() => new Float32Array(NR));
-  projectJoseph([ras.buf[0], ras.buf[1]], n, dx, ras.bb, geo, [L[0], L[1]]);
-  if (ras.hasI || ras.hasM) projectJoseph([ras.buf[2], ras.buf[3]], n, dx, ras.bb, geo, [L[2], L[3]]);
+  if (accel) accel.forward(ras.buf, n, dx, ras.bb, geo, L);
+  else {
+    projectJoseph([ras.buf[0], ras.buf[1]], n, dx, ras.bb, geo, [L[0], L[1]]);
+    if (ras.hasI || ras.hasM) projectJoseph([ras.buf[2], ras.buf[3]], n, dx, ras.bb, geo, [L[2], L[3]]);
+  }
 
   // --- odak noktası + dedektör açıklığı bulanıklığı
   const mag = (SOURCE_DET_MM - SOURCE_ISO_MM) / SOURCE_DET_MM;
@@ -271,8 +281,9 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
   const m = req.matrix;
   const rg: ReconGrid = { m, pix: req.dfov / m, cx: req.reconCx, cy: req.reconCy };
   let q = filterSinogram(p, geo, kernel);
+  const bpFn = (qq: Float32Array, out: Float32Array) => (accel ? accel.backproject(qq, geo, rg, out) : backproject(qq, geo, rg, out));
   let mu = new Float32Array(m * m);
-  backproject(q, geo, rg, mu);
+  bpFn(q, mu);
   const muRef = poly.muRef;
   const toHU = (arr: Float32Array) => {
     const out = new Float32Array(arr.length);
@@ -295,7 +306,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
       inpaintTrace(p2, tr, geo);
       q = filterSinogram(p2, geo, kernel);
       mu = new Float32Array(m * m);
-      backproject(q, geo, rg, mu);
+      bpFn(q, mu);
       const hu2 = toHU(mu);
       for (let i = 0; i < m * m; i++) if (mask[i]) hu2[i] = hu[i];
       hu = hu2;
@@ -335,6 +346,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest): SliceResul
       hasIodine: ras.hasI,
       eRef: poly.eRef,
       ms: performance.now() - t0,
+      accel: accel ? accel.name : 'CPU',
     },
   };
 
