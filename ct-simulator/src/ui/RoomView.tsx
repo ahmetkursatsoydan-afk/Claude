@@ -42,6 +42,7 @@ export function RoomView({ active }: { active: boolean }) {
   const scan = useApp((s) => s.scan);
   const params = useApp((s) => s.params);
   const [showBeam, setShowBeam] = useState(true);
+  const [mobile3d, setMobile3d] = useState(false);
 
   useEffect(() => {
     if (!host.current) return;
@@ -71,7 +72,10 @@ export function RoomView({ active }: { active: boolean }) {
   const xray = hw.beam !== 'off';
   const off = isoYp(hw.tableH);
   return (
-    <div className="room">
+    <div className={'room' + (mobile3d ? ' mobile-3d' : '')}>
+      <button className="mobile-toggle" onClick={() => setMobile3d(!mobile3d)}>
+        {mobile3d ? '☰ Konsol' : '◎ 3B oda'}
+      </button>
       <div className="room3d">
         <div ref={host} style={{ position: 'absolute', inset: 0 }} />
         {err && <div className="empty">{err}</div>}

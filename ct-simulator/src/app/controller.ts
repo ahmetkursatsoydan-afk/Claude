@@ -302,6 +302,15 @@ function startRecon(sd: SeriesData, order: number[]) {
   order.forEach((idx, k) => dispatchSlice(sd, idx, k, idx === mid));
 }
 
+export function abortTopogram() {
+  abortFlag = true;
+  machine.driveSpeed = null;
+  machine.targetT = machine.tableT;
+  machine.beam = 'off';
+  machine.xrayLamp = false;
+  getPool().cancelAll();
+}
+
 export function skipContrastWait() {
   skipWait = true;
 }

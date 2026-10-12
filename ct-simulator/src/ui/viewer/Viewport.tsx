@@ -263,8 +263,8 @@ export function Viewport({ idx }: { idx: number }) {
           <div className="ori" style={{ top: '50%', left: 6 }}>{ori[2]}</div>
           <div className="ori" style={{ top: '50%', right: 14 }}>{ori[3]}</div>
           <div className="ori" style={{ top: 4, left: '50%' }}>{ori[0]}</div>
-          <div className="ori" style={{ bottom: 18, left: '50%' }}>{ori[1]}</div>
-          <div className="edu">EĞİTİM AMAÇLI SİMÜLASYON · SENTETİK GÖRÜNTÜ · TANI AMAÇLI DEĞİLDİR</div>
+          <div className="ori" style={{ bottom: 16, left: '50%' }}>{ori[1]}</div>
+          <div className="edu">{size[0] > 760 ? 'EĞİTİM AMAÇLI SİMÜLASYON · SENTETİK GÖRÜNTÜ · TANI AMAÇLI DEĞİLDİR' : 'SENTETİK · EĞİTİM AMAÇLI'}</div>
           <div className="scrollbar">
             <div style={{ top: `${(vp.index / Math.max(1, n - 1)) * 100}%` }} />
           </div>

@@ -1,8 +1,7 @@
 import { useApp } from '../../state/store';
-import { acquireTopogram, isBusy } from '../../app/controller';
+import { abortTopogram, acquireTopogram, isBusy } from '../../app/controller';
 import { Progress, Row, Section, Seg, Slider } from '../controls';
 import { TopogramPlanner } from './TopogramPlanner';
-import { machine } from '../../app/machine';
 
 export function TopogramTab() {
   const { topo, set, patient, hw } = useApp();
@@ -52,7 +51,7 @@ export function TopogramTab() {
           AP topogramdan her z için su-eşdeğer çap (Dw) çıkarılır ve otomatik tüp akımı modülasyonunda (ATCM) kullanılır.
         </div>
         {busy && topo.status === 'acquiring' && (
-          <button className="btn danger" onClick={() => ((machine.driveSpeed = null), (machine.beam = 'off'))}>
+          <button className="btn danger" onClick={abortTopogram}>
             Durdur
           </button>
         )}
