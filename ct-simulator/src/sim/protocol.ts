@@ -73,6 +73,14 @@ export interface SliceRequest {
   collimation?: number;
   /** model tabanlı saçılma düzeltmesi */
   scatterCorr?: boolean;
+  /** eğitim: monoenerjetik ışın (ışın sertleşmesi yok) */
+  mono?: boolean;
+  /** eğitim: su ışın sertleşmesi düzeltmesi kapalı */
+  bhcOff?: boolean;
+  /** eğitim: dedektör kanal kazanç hatası (göreli, ör. 0.01) → halka artefaktı */
+  ringFault?: number;
+  /** eğitim: yalnızca her k'inci görünümü kullan (az görünüm → aliasing çizgileri) */
+  viewDecimate?: number;
   debug?: boolean;
 }
 

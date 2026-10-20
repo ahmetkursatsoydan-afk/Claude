@@ -2,8 +2,10 @@
 import { create } from 'zustand';
 import { DEFAULT_PHANTOM_CONFIG, type PhantomConfig } from '../phantom/types';
 import { PROTOCOLS, type Breathing, type ScanParams } from '../sim/scan';
+import { DEFAULT_SOURCE, type FormationSource } from '../app/formationSource';
+import { DEFAULT_ITER, type IterOptions } from '../sim/iterative';
 
-export type ViewMode = 'room' | 'viewer' | 'physics';
+export type ViewMode = 'room' | 'viewer' | 'physics' | 'formation';
 export type ConsoleTab = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'recon' | 'lab';
 export type Step = 'patient' | 'position' | 'topogram' | 'plan' | 'scan' | 'review';
 
@@ -72,6 +74,24 @@ export interface ViewportState {
   seriesId?: string | null;
 }
 
+/** Görüntü oluşumu gezgini arayüz durumu (büyük veriler app/formation.ts içinde) */
+export interface FormationUi {
+  /** etkin aşama indeksi */
+  stage: number;
+  src: FormationSource;
+  status: 'idle' | 'running' | 'done' | 'error';
+  msg: string;
+  /** ana veri sürümü */
+  ver: number;
+  iterOpts: IterOptions;
+  iterStatus: 'idle' | 'running' | 'done' | 'error';
+  iterVer: number;
+  /** artefakt atlası: girdi → durum */
+  atlas: Record<string, 'running' | 'done' | 'error'>;
+  atlasVer: number;
+  atlasSel: string;
+}
+
 /** Rehberli deney çalıştırma durumu */
 export interface ExperimentRuntime {
   id: string | null;
@@ -117,6 +137,8 @@ export interface AppState {
     note: { title: string; points: string[] } | null;
   };
   exp: ExperimentRuntime;
+  /** Görüntü oluşumu gezgini */
+  formation: FormationUi;
   physicsSliceZ: number | null;
   log: LogEntry[];
   /** makine durumunun arayüz kopyası */
@@ -165,6 +187,7 @@ export const useApp = create<AppState>()((set, get) => ({
     note: null,
   },
   exp: { id: null, status: 'idle', step: '', series: [] },
+  formation: { stage: 0, src: DEFAULT_SOURCE, status: 'idle', msg: '', ver: 0, iterOpts: DEFAULT_ITER, iterStatus: 'idle', iterVer: 0, atlas: {}, atlasVer: 0, atlasSel: 'noise' },
   physicsSliceZ: null,
   log: [{ t: Date.now(), text: 'Sistem hazır. Eğitim amaçlı sentetik BT simülatörü – gerçek hasta verisi kullanılmaz.', level: 'info' }],
   hw: { tableH: 0.52, tableT: -1170, rotor: 0, beam: 'off', lasers: true, cover: 'opaque', interlock: '', patientT: 0 },

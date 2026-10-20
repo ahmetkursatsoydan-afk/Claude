@@ -9,7 +9,8 @@
  */
 import { KERNELS } from '../physics/kernels';
 import { makeConcFn } from '../physics/contrast';
-import { breathWeight, rasterizeSlab, type Grid, type PhantomModel } from '../phantom/raster';
+import { breathWeight, rasterizeSlab, type BBox, type Grid, type PhantomModel } from '../phantom/raster';
+import { channelMassAtten } from '../physics/materials';
 import { buildPolyModel, applyBhc, polyEval, type PolyModel } from './poly';
 import { projectJoseph, backproject, type ProjGeom, type ReconGrid } from './projector';
 import { filterSinogram } from './fbp';
@@ -128,7 +129,7 @@ function starvationCorrection(p: Float32Array, neq: Float32Array, nv: number, nb
   }
 }
 
-function blurRows(a: Float32Array, nv: number, nb: number, sigmaBins: number): void {
+export function blurRows(a: Float32Array, nv: number, nb: number, sigmaBins: number): void {
   if (sigmaBins < 0.05) return;
   const k1 = Math.exp(-1 / (2 * sigmaBins * sigmaBins));
   const k2 = Math.exp(-4 / (2 * sigmaBins * sigmaBins));
@@ -142,6 +143,54 @@ function blurRows(a: Float32Array, nv: number, nb: number, sigmaBins: number): v
   }
 }
 
+/**
+ * Görüntü oluşumu gezgini için ara sonuçların yakalanması (isteğe bağlı). Doldurulan diziler
+ * kopyadır; ana tarama yolunda (cap verilmezse) ek maliyet yoktur.
+ */
+export interface SliceCapture {
+  /** veri toplama geometrisi */
+  geo?: ProjGeom;
+  /** rekonstrüksiyon geometrisi (görünüm seyreltmesi sonrası) */
+  rgeo?: ProjGeom;
+  grid?: Grid;
+  poly?: PolyModel;
+  /** fantom kanal görüntüleri (W, B, I, M; g/cm³) – kesit profili boyunca ortalanmış */
+  chan?: Float32Array[];
+  bb?: BBox;
+  /** ideal monoenerjetik çizgi integralleri Σ μ_c(E_ref)·L_c (gürültüsüz) */
+  monoLine?: Float32Array;
+  /** polikromatik, gürültüsüz −ln Tₑ */
+  polyLine?: Float32Array;
+  /** beklenen sayım (birincil + saçılma, gürültüsüz) */
+  expected?: Float32Array;
+  /** ölçülen sayım (Poisson + elektronik gürültü, kazanç hatası dahil) */
+  counts?: Float32Array;
+  /** zayıflatmasız sayım profili (görünüm 0, açısal modülasyonsuz) */
+  n0?: Float32Array;
+  /** −ln(I/I₀), BHC öncesi (gürültülü) */
+  raw?: Float32Array;
+  /** rekonstrüksiyon girdisi: BHC + foton açlığı düzeltmesi sonrası (rgeo) */
+  p?: Float32Array;
+  /** istatistiksel ağırlıklar (etkin NEQ, rgeo) */
+  w?: Float32Array;
+  /** filtrelenmiş sinogram (rgeo; MAR uygulandıysa iz enterpolasyonu sonrası) */
+  q?: Float32Array;
+  /** MAR uygulandıysa: MAR öncesi filtrelenmiş sinogram (metal piksellerini geri koymak için) */
+  q0?: Float32Array;
+  rg?: ReconGrid;
+  /** odak noktası + dedektör açıklığı bulanıklığı (σ, kanal) */
+  blurBins?: number;
+}
+
+/** Halka artefaktı gösterimi: kalibrasyonu bozuk dedektör kanalları (izomerkeze uzaklık mm, göreli kazanç hatası) */
+const RING_CHANNELS: [number, number][] = [
+  [17, 1.0],
+  [46, -0.8],
+  [88, 1.2],
+  [131, -0.7],
+  [176, 0.9],
+];
+
 /** İsteğe bağlı hızlandırıcı (WebGL2). */
 export interface Accel {
   name: string;
@@ -149,7 +198,7 @@ export interface Accel {
   backproject(q: Float32Array, geo: ProjGeom, rg: ReconGrid, out: Float32Array): void;
 }
 
-export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Accel | null): SliceResult {
+export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Accel | null, cap?: SliceCapture): SliceResult {
   const t0 = performance.now();
   const tm: Record<string, number> = {};
   let tl = t0;
@@ -243,6 +292,7 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   // dedektör açıklığı (kutu, genişlik ≈ kanal aralığı → σ² = ds²/12) + odak noktası (Gauss)
   const fwhm = Math.sqrt(focalIso * focalIso + (2.355 * 2.355 * Q.ds * Q.ds) / 12);
   const sigB = fwhm / 2.355 / Q.ds;
+  if (cap) cap.blurBins = sigB;
   for (let c = 0; c < 4; c++) if (c < 2 || ras.hasI || ras.hasM) blurRows(L[c], geo.nv, geo.nb, sigB);
 
   // --- polikromatik geçirgenlik
@@ -274,6 +324,38 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
         neqRel[k] = pa[1];
       }
     }
+  }
+
+  // --- ideal monoenerjetik çizgi integralleri (E_ref) – eğitim: ışın sertleşmesiz referans
+  let monoLine: Float32Array | null = null;
+  if (req.mono || cap) {
+    const mc = [0, 1, 2, 3].map((c) => channelMassAtten(c, poly.eRef));
+    monoLine = new Float32Array(NR);
+    for (let k = 0; k < NR; k++) monoLine[k] = mc[0] * L[0][k] + mc[1] * L[1][k] + (useIM ? mc[2] * L[2][k] + mc[3] * L[3][k] : 0);
+  }
+  if (cap) {
+    cap.polyLine = new Float32Array(NR);
+    for (let k = 0; k < NR; k++) cap.polyLine[k] = -Math.log(Math.max(1e-30, te[k]));
+    cap.monoLine = monoLine!;
+  }
+  if (req.mono) {
+    // monoenerjetik ışın: Tₑ = e^{−Σμ(E_ref)L}, NEQ ∝ Tₑ (spektral sertleşme yok)
+    for (let k = 0; k < NR; k++) {
+      te[k] = Math.exp(-monoLine![k]);
+      neqRel[k] = te[k];
+    }
+  }
+  const noBhc = !!req.mono || !!req.bhcOff;
+  // halka artefaktı: bozuk kanal kazançları (±s simetrik → tam halka)
+  let gain: Float32Array | null = null;
+  if (req.ringFault && req.ringFault > 0) {
+    gain = new Float32Array(nb).fill(1);
+    const cb0 = (nb - 1) / 2;
+    for (const [sMm, g] of RING_CHANNELS)
+      for (const sg of [-1, 1]) {
+        const b = Math.round(cb0 + (sg * sMm) / Q.ds);
+        if (b >= 0 && b < nb) gain[b] = 1 + g * req.ringFault;
+      }
   }
 
   lap('poly');
@@ -315,6 +397,9 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   const es = ELECTRONIC_SIGMA;
   const sig = new Float32Array(NR); // ölçülen göreli sinyal I/I0
   const n0row = new Float32Array(nb);
+  const capCounts = cap ? new Float32Array(NR) : null;
+  const capExp = cap ? new Float32Array(NR) : null;
+  const capRaw = cap ? new Float32Array(NR) : null;
   // --- saçılma: birincil akı × −ln(T) (saçılma olasılığı) → geniş çekirdekle dedektöre yayılır.
   // Genlik toplam kolimasyonla artar (geniş ışın → daha çok saçılan hacim; 2B ızgara ile sınırlı).
   const coll = req.collimation ?? 0;
@@ -353,6 +438,14 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
       else meas = tot + Math.sqrt(tot + es * es) * rng.gauss();
       // dedektör toplam (birincil + saçılan) sayar; düzeltme saçılma tahminini çıkarır
       sig[k] = te[k] * ((meas - eta * sc) / Math.max(neq, 1e-9));
+      if (gain) {
+        sig[k] *= gain[b];
+        meas *= gain[b];
+      }
+      if (capCounts) {
+        capCounts[k] = meas;
+        capExp![k] = tot;
+      }
       neqAbs[k] = (neq * neq) / Math.max(tot, 1e-9); // etkin NEQ: saçılma sinyal katmadan gürültü ekler
       if (b === cbin) sprSum += sc / Math.max(neq, 1e-9);
       if (v === midV) countsView[b] = meas;
@@ -369,6 +462,11 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
       if (sig[k] < floor) sig[k] = floor;
       let pv = -Math.log(sig[k]);
       if (!isFinite(pv)) pv = 30;
+      if (capRaw) capRaw[k] = pv;
+      if (noBhc) {
+        p[k] = pv;
+        continue;
+      }
       const gA = poly.groups[poly.groupA[b]], gB = poly.groups[poly.groupB[b]], gf = poly.groupF[b];
       p[k] = gf > 0.001 ? applyBhc(gA, pv) * (1 - gf) + applyBhc(gB, pv) * gf : applyBhc(gA, pv);
     }
@@ -380,14 +478,48 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
   // klasik koyu/parlak metal çizgileri, ancak tuz-biber gürültüsü bastırılır.
   starvationCorrection(p, neqAbs, geo.nv, nb);
 
+  // --- görünüm seyreltmesi (eğitim: az sayıda açı → örnekleme/aliasing çizgileri)
+  let rgeo: ProjGeom = geo;
+  let pr = p, wr = neqAbs;
+  const dec = Math.max(1, Math.floor(req.viewDecimate ?? 1));
+  if (dec > 1) {
+    const nv2 = Math.max(4, Math.floor(geo.nv / dec));
+    rgeo = { nv: nv2, nb, ds: geo.ds };
+    pr = new Float32Array(nv2 * nb);
+    wr = new Float32Array(nv2 * nb);
+    for (let v = 0; v < nv2; v++) {
+      pr.set(p.subarray(v * dec * nb, (v * dec + 1) * nb), v * nb);
+      wr.set(neqAbs.subarray(v * dec * nb, (v * dec + 1) * nb), v * nb);
+    }
+  }
+  if (cap) {
+    cap.geo = geo;
+    cap.rgeo = rgeo;
+    cap.grid = grid;
+    cap.poly = poly;
+    cap.bb = { ...ras.bb };
+    cap.chan = ras.buf.map((b) => new Float32Array(b));
+    cap.counts = capCounts!;
+    cap.expected = capExp!;
+    cap.raw = capRaw!;
+    cap.n0 = new Float32Array(nb);
+    for (let b = 0; b < nb; b++) cap.n0[b] = base * fluxProfile[b];
+    cap.p = new Float32Array(pr);
+    cap.w = new Float32Array(wr);
+  }
+
   lap('noise');
   // --- rekonstrüksiyon
   const kernel = KERNELS[req.kernel];
-  if (req.recon === 'IR') adaptiveSinoFilter(p, neqAbs, geo.nv, nb, 0.3 + 0.12 * req.irLevel);
+  if (req.recon === 'IR') adaptiveSinoFilter(pr, wr, rgeo.nv, nb, 0.3 + 0.12 * req.irLevel);
   const m = req.matrix;
   const rg: ReconGrid = { m, pix: req.dfov / m, cx: req.reconCx, cy: req.reconCy };
-  let q = filterSinogram(p, geo, kernel);
-  const bpFn = (qq: Float32Array, out: Float32Array) => (accel ? accel.backproject(qq, geo, rg, out) : backproject(qq, geo, rg, out));
+  let q = filterSinogram(pr, rgeo, kernel);
+  if (cap) {
+    cap.q = new Float32Array(q);
+    cap.rg = rg;
+  }
+  const bpFn = (qq: Float32Array, out: Float32Array) => (accel ? accel.backproject(qq, rgeo, rg, out) : backproject(qq, rgeo, rg, out));
   let mu = new Float32Array(m * m);
   bpFn(q, mu);
   const muRef = poly.muRef;
@@ -407,15 +539,19 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
         any = true;
       }
     if (any) {
-      const tr = metalTrace(mask, rg, geo);
-      const p2 = new Float32Array(p);
-      inpaintTrace(p2, tr, geo);
-      q = filterSinogram(p2, geo, kernel);
+      const tr = metalTrace(mask, rg, rgeo);
+      const p2 = new Float32Array(pr);
+      inpaintTrace(p2, tr, rgeo);
+      q = filterSinogram(p2, rgeo, kernel);
       mu = new Float32Array(m * m);
       bpFn(q, mu);
       const hu2 = toHU(mu);
       for (let i = 0; i < m * m; i++) if (mask[i]) hu2[i] = hu[i];
       hu = hu2;
+      if (cap) {
+        cap.q0 = cap.q;
+        cap.q = new Float32Array(q);
+      }
     }
   }
 
@@ -472,10 +608,10 @@ export function computeSlice(model: PhantomModel, req: SliceRequest, accel?: Acc
     const tv = new Float32Array(nb);
     for (let b = 0; b < nb; b++) tv[b] = te[midV * nb + b];
     res.debug = {
-      nv: geo.nv,
+      nv: rgeo.nv,
       nb,
       ds: Q.ds,
-      sino: p,
+      sino: pr,
       filtered: q,
       transmissionView: tv,
       countsView,

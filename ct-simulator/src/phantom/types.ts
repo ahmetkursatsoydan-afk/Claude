@@ -101,6 +101,8 @@ export interface PhantomConfig {
   arms: 'up' | 'down';
   implant: 'none' | 'hipRight' | 'hipBilateral' | 'dental' | 'spine';
   seed: number;
+  /** eğitim/QA fantomu (anatomi yerine): 'qa' su silindiri + ekler, 'qaMetal' + iki çelik çubuk */
+  test?: 'qa' | 'qaMetal';
 }
 
 export const DEFAULT_PHANTOM_CONFIG: PhantomConfig = {
