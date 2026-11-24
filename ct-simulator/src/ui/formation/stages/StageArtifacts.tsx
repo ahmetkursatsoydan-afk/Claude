@@ -146,7 +146,7 @@ const f1 = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
 export function StageArtifacts() {
   const sel = useApp((s) => s.formation.atlasSel);
   const atlasState = useApp((s) => s.formation.atlas);
-  const atlasVer = useApp((s) => s.formation.atlasVer);
+  useApp((s) => s.formation.atlasVer);
   const entry = ARTIFACTS.find((a) => a.id === sel) ?? ARTIFACTS[0];
   const st = atlasState[entry.id];
   const has = formationData.atlas.has(entry.id);
@@ -206,7 +206,7 @@ export function StageArtifacts() {
           </button>
         </div>
       )}
-      {has && <EntryBody key={entry.id + ':' + atlasVer} entry={entry} res={formationData.atlas.get(entry.id)!} st={st} />}
+      {has && <EntryBody key={entry.id} entry={entry} res={formationData.atlas.get(entry.id)!} st={st} />}
     </>
   );
 }
