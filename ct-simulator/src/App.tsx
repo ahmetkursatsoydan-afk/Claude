@@ -5,6 +5,7 @@ import { TopBar } from './ui/TopBar';
 import { RoomView } from './ui/RoomView';
 import { ViewerWorkspace } from './ui/viewer/ViewerWorkspace';
 import { PhysicsView } from './ui/physics/PhysicsView';
+import { FormationView } from './ui/formation/FormationView';
 import { StatusBar } from './ui/StatusBar';
 import * as controller from './app/controller';
 import * as data from './app/data';
@@ -38,6 +39,11 @@ export default function App() {
         {view === 'physics' && (
           <div style={{ position: 'absolute', inset: 0 }}>
             <PhysicsView />
+          </div>
+        )}
+        {view === 'formation' && (
+          <div style={{ position: 'absolute', inset: 0 }}>
+            <FormationView />
           </div>
         )}
       </div>

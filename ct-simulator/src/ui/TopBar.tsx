@@ -12,6 +12,7 @@ const STEPS: { id: Step; l: string }[] = [
 const VIEWS: { id: ViewMode; l: string }[] = [
   { id: 'room', l: 'Tarama Odası' },
   { id: 'viewer', l: 'Görüntüler' },
+  { id: 'formation', l: 'Görüntü Oluşumu' },
   { id: 'physics', l: 'Fizik & Veri' },
 ];
 
