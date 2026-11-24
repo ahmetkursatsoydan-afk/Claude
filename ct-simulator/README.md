@@ -45,7 +45,16 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
    ve ROI/ölçümler senkron).
 7. **Fizik & Veri** – spektrum ve sertleşme, μ/ρ(E), kVp'ye göre beklenen HU, veri zinciri
    (fantom → sinogram → filtreli sinogram → görüntü), kernel MTF/NPS, ATCM ve Dw profili, kontrast eğrileri.
-8. **Deneyler** – 12 rehberli fizik deneyi (mAs–gürültü, kesit kalınlığı, kernel, kVp–iyot, ışın sertleşmesi,
+8. **Görüntü Oluşumu** – bir kesitin X-ışınından görüntüye nasıl oluştuğunu 13 aşamada, ana simülatörle aynı
+   fizik motorunun ürettiği gerçek ara verilerle gösteren gezgin: nesne (μ haritası), spektrum ve papyon, tek
+   projeksiyon (Beer–Lambert), sinogram (noktaya tıkla → sinüzoid), foton sayımı ve gürültü, log/ışın sertleşmesi
+   düzeltmesi, filtresiz geri izdüşüm, rampa × kernel filtresi, açı açı oluşan FBP, HU ve pencereleme,
+   **tam istatistiksel iteratif rekonstrüksiyon** (tahmin → ileri izdüşüm → karşılaştır → ağırlıklı geri izdüşüm →
+   düzenlileştir döngüsü; boş görüntüden veya FBP'den başlatma, artık sinogram, yakınsama/gürültü/RMSE eğrileri)
+   ve **artefakt atlası** (gürültü, foton açlığı, ışın sertleşmesi, metal, hareket, saçılma, halka, az görünüm,
+   kesilme, kısmi hacim: neden → sinogram izi → görüntü izi → düzeltme; A ideal / B artefakt / C düzeltme ve
+   gerçeğe göre hata haritaları).
+9. **Deneyler** – 12 rehberli fizik deneyi (mAs–gürültü, kesit kalınlığı, kernel, kVp–iyot, ışın sertleşmesi,
    metal/MAR, kol pozisyonu, pitch, solunum hareketi, saçılma, dikey merkezleme, SFOV kesilmesi). Her deney
    tek bir parametreyi değiştirir; hasta hazırlığı, topogram, A/B taramaları (veya aynı ham veriden retrospektif
    rekon) otomatik yürür ve görüntüleyicide neyin gözlemleneceğini anlatan notla senkron karşılaştırma açılır.
@@ -66,6 +75,7 @@ Gereksinimler: Node 18+, WebGL2 destekli modern tarayıcı (Chrome/Edge/Firefox/
 | Solunum hareketi | Diyafram, karaciğer/karın organları, akciğer tabanı ve kalp kraniyokaudal yönde sinüzoidal yer değiştirir (z'ye göre ağırlıklı). Bir kesitin verisi ≈0.62 rotasyon boyunca toplanır: fantom birkaç anahtar anda rasterleştirilir ve her görünümün izdüşümü zaman içinde harmanlanır → çift kontur, çizgiler; kesitler farklı fazlarda alındığından MPR'de basamaklanma. Nefes tutan hasta ~20 s sonra nefes almaya başlar. |
 | Kesilme (SFOV) | Fantom 700 mm ızgarada rasterleştirilir, dedektör 500 mm SFOV'u kapsar: dışarıda kalan vücut kısımları (obez hasta, yanda kollar) ölçülmez → kenar parlaması ve HU kayması. |
 | Ön işleme | −ln(I/I₀), su ışın sertleşmesi düzeltmesi (papyon kanalına göre sürekli kalibrasyon), foton açlığı için uyarlamalı 2B filtre. Kemik/iyot için düzeltilmemiş sertleşme kalır → kemikler arası koyu bantlar, kVp'ye bağlı HU. |
+| İteratif (gezgin) | Tam istatistiksel PWLS: Φ(x) = ½Σwᵢ([Ax]ᵢ−yᵢ)² + β·Σψ_δ(x_j−x_k); A = Joseph izdüşümü + dedektör/odak bulanıklığı, wᵢ = ışının etkin foton sayısı, ψ = Huber. Çözücü: OS-SQS + Nesterov ivmesi; 320² ızgara (1.56 mm). |
 | Rekonstrüksiyon | FBP: Kak–Slaney rampa × kernel penceresi (lp/cm cinsinden): yumuşak doku (Hann, ~8 lp/cm), akciğer (+%35 artış), kemik (+%95 artış, kenar aşması). Hibrit IR: izdüşüm alanı istatistiksel filtre + Huber-TV görüntü alanı düzenlileştirme + FBP harmanlama (seviye 1–5). MAR: metal izinin doğrusal enterpolasyonu. |
 | Kontrast | Gama-varyat + denge kompartmanları (aort, sağ kalp/PA, portal ven, IVC, karaciğer, dalak, pankreas, böbrek korteks/medulla, ekskresyon, mesane tabakalaşması). Her kesit, masanın o z'ye ulaştığı zamanda örneklenir. |
 | Doz | CTDIw/100 mAs (16/32 cm fantom, ~kVp^2.6) → CTDIvol = CTDIw·mAs_eff/100; DLP (aşırı tarama dahil); etkin doz Σ k(z)·CTDIvol·Δz; SSDE = f(Dw)·CTDIvol. |

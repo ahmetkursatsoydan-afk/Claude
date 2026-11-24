@@ -19,7 +19,10 @@
 
 /* kontroller */
 .sit-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
-.sit-g { display: flex; align-items: center; gap: 8px; min-width: 220px; flex: 1 1 260px; }
+.sit-g { display: flex; align-items: center; gap: 8px; min-width: 300px; flex: 1 1 320px; }
+.sit-g .slider { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.sit-g .slider input[type="range"] { flex: 1; min-width: 60px; }
+.sit-g .slider .num { flex: 0 0 64px; }
 .sit-g.wide { flex: 1 1 100%; flex-wrap: wrap; }
 .sit-g.wide .seg { flex: 0 1 460px; min-width: 0; }
 .sit-lab { font-size: 11.5px; color: var(--muted); white-space: nowrap; min-width: 120px; }
