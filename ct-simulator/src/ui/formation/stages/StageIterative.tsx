@@ -441,7 +441,7 @@ export function StageIterative() {
         <StatChip label="σ azalması" value={isFinite(sigRed) ? `${(sigRed * 100).toFixed(0)} %` : '—'} tone={sigRed > 0 ? 'ok' : 'warn'} />
         <StatChip label="FBP RMSE" value={`${fbpRm.toFixed(1)} HU`} tone="b" />
         <StatChip label="IR RMSE" value={irRmse != null ? `${irRmse.toFixed(1)} HU` : '—'} tone="a" />
-        <StatChip label="Eşdeğer doz (σ ∝ 1/√doz)" value={isFinite(sigRed) && irNoise > 0 ? `≈ %${Math.round(100 * (irNoise / fbpSig) ** 2)}` : '—'} />
+        <StatChip label="FBP σ’sı için IR dozu (σ ∝ 1/√doz)" value={isFinite(sigRed) && irNoise > 0 ? `≈ %${Math.round(100 * (irNoise / fbpSig) ** 2)}` : '—'} />
         <StatChip label="Hesap süresi" value={`${(ir.ms / 1000).toFixed(1)} s`} />
       </div>
 

@@ -1,0 +1,47 @@
+/* Aşama 11 – iteratif rekonstrüksiyon (sit-*) */
+
+/* döngü şeması: geniş ekranda 3×(kutu) / oklar / 3×(kutu) halkası, dar ekranda dikey liste */
+.sit-loopwrap { display: grid; gap: 8px; max-width: 860px; }
+.sit-loop { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); grid-template-rows: auto 30px auto; align-items: stretch; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.sit-box { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 10px; border: 1px solid var(--line2); border-radius: 7px; background: var(--panel2); color: var(--muted); cursor: pointer; font: inherit; min-width: 0; }
+.sit-box:hover { border-color: var(--accent2); }
+.sit-box .sit-n { grid-row: span 2; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; background: var(--line2); color: var(--text); font: 600 12px var(--mono); }
+.sit-box .sit-t { color: var(--text); font-weight: 600; font-size: 12.5px; }
+.sit-box .sit-s { font: 11px var(--mono); color: var(--muted); }
+.sit-box.on { border-color: var(--accent); background: #0f2633; box-shadow: 0 0 0 1px var(--accent2) inset; }
+.sit-box.on .sit-n { background: var(--accent); color: #002; }
+.sit-arr { display: grid; place-items: center; color: var(--accent2); font-size: 18px; line-height: 1; position: relative; }
+.sit-arr .narrow { display: none; }
+.sit-arr.back { justify-items: center; }
+.sit-arr .lab { position: absolute; left: calc(50% + 14px); top: 50%; transform: translateY(-50%); font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+.sit-detail { font-size: 12.5px; line-height: 1.5; color: var(--text); padding: 6px 10px; border-left: 3px solid var(--accent); background: var(--panel2); border-radius: 0 var(--radius) var(--radius) 0; }
+.sit-detail b { color: #fff; }
+
+/* kontroller */
+.sit-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.sit-g { display: flex; align-items: center; gap: 8px; min-width: 220px; flex: 1 1 260px; }
+.sit-g.wide { flex: 1 1 100%; flex-wrap: wrap; }
+.sit-g.wide .seg { flex: 0 1 460px; min-width: 0; }
+.sit-lab { font-size: 11.5px; color: var(--muted); white-space: nowrap; min-width: 120px; }
+.sit-run { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1 1 100%; }
+.sit-status { font-size: 12px; color: var(--muted); }
+.sit-status.running { color: var(--accent); }
+.sit-status.error { color: var(--danger); }
+
+/* oynatıcı */
+.sit-player { display: grid; gap: 6px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.sit-player .fx-player .lbl { white-space: normal; }
+.sit-player-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+.sit-player-opts .seg { flex: 0 0 auto; }
+.sit-player-opts .seg button { padding: 4px 10px; white-space: nowrap; }
+
+.sit-honest { color: var(--muted); font-size: 12px; }
+
+@media (max-width: 640px) {
+  .sit-loop { display: flex; flex-direction: column; gap: 2px; }
+  .sit-arr { height: 18px; font-size: 15px; }
+  .sit-arr .wide, .sit-arr .lab { display: none; }
+  .sit-arr .narrow { display: inline; }
+  .sit-g.wide .seg { flex-wrap: wrap; }
+  .sit-lab { min-width: 0; }
+}
