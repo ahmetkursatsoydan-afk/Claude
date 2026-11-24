@@ -1,0 +1,14 @@
+/* Aşama 1 – Nesne (önek: fxob-) */
+.fxob-read { display: flex; flex-wrap: wrap; gap: 4px 14px; min-height: 20px; margin-top: 4px; font: 12px var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+.fxob-read .l { color: var(--muted); }
+.fxob-read.idle { color: var(--dim); font-family: inherit; }
+.fxob-ctrl { margin-bottom: 6px; }
+.fxob-side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.fxob-tblwrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); }
+.fxob-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fxob-tbl th, .fxob-tbl td { padding: 4px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.fxob-tbl th { background: var(--panel2); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+.fxob-tbl td.num, .fxob-tbl th.num { text-align: right; font-family: var(--mono); }
+.fxob-tbl tr:last-child td { border-bottom: none; }
+.fxob-tbl .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line2); }
+.fxob-tblcap { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }

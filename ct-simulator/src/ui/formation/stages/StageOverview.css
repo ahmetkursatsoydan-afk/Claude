@@ -1,0 +1,33 @@
+/* Aşama 0 – Genel bakış (önek: fxov-) */
+.fxov-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 18px; align-items: start; }
+.fxov-card { position: relative; display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); cursor: pointer; text-align: left; color: var(--text); min-width: 0; }
+.fxov-card:hover, .fxov-card:focus-visible { border-color: var(--accent2); background: var(--panel3); outline: none; }
+.fxov-card .h { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; font-weight: 600; color: #fff; }
+.fxov-card .h .k { font: 600 10.5px var(--mono); color: var(--accent); }
+.fxov-card .d { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.fxov-card .go { font-size: 10.5px; color: var(--accent); }
+.fxov-card:not(:last-child)::after { content: '→'; position: absolute; right: -15px; top: 42%; color: var(--dim); font-size: 14px; pointer-events: none; }
+.fxov-card .fx-img-box { pointer-events: none; }
+.fxov-card .fx-img canvas { pointer-events: none; }
+@media (max-width: 900px) {
+  .fxov-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fxov-card:nth-child(2)::after { content: none; }
+}
+@media (max-width: 460px) {
+  .fxov-strip { grid-template-columns: minmax(0, 1fr); }
+  .fxov-card::after { content: none !important; }
+}
+
+.fxov-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.fxov-item { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: start; text-align: left; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel2); color: var(--muted); cursor: pointer; font-size: 11.5px; line-height: 1.4; }
+.fxov-item:hover { border-color: var(--line2); background: var(--panel3); color: var(--text); }
+.fxov-item .n { grid-row: span 2; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: var(--line2); color: var(--text); font: 600 11px var(--mono); }
+.fxov-item .t { color: var(--text); font-weight: 600; font-size: 12.5px; }
+.fxov-item.star { border-color: var(--warn); background: #241d0b; }
+.fxov-item.star .n { background: var(--warn); color: #201400; }
+.fxov-item.star .t { color: #ffe3a6; }
+
+.fxov-hl { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.fxov-hl .fx-explain { max-width: none; border-color: var(--warn); }
+.fxov-hl .fx-explain button { margin-top: 4px; }
+.fxov-sec { margin: 4px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); }
